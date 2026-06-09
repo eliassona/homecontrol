@@ -17,6 +17,7 @@ from devices.registry import DeviceRegistry
 from devices.s9_miner import S9Miner
 from devices.electricity_price import ElectricityPrice
 from devices.outside_weather import OutsideWeather
+from devices.verisure import VerisureSystem
 from api.automator import Automator
 
 logging.basicConfig(
@@ -41,6 +42,7 @@ DEVICE_CLASSES = {
     "s9_miner":          S9Miner,
     "electricity_price": ElectricityPrice,
     "outside_weather":   OutsideWeather,
+    "verisure":          VerisureSystem,
     # "room_sensor":   RoomSensor,
     # "power_meter":   PowerMeter,
     # "tesla_charger": TeslaCharger,

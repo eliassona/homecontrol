@@ -300,6 +300,47 @@
       </div>
     </div>
 
+    <!-- Verisure -->
+    <div id="verisure-section" style="display:none">
+      <div class="section-label">Verisure</div>
+      <div class="miner-panel">
+        <div class="miner-header">
+          <h2>Alarm system</h2>
+          <span class="badge offline" id="verisure-arm-badge">—</span>
+        </div>
+        <div class="miner-stats" style="margin-bottom:16px">
+          <div class="stat">
+            <div class="stat-label">Open sensors</div>
+            <div class="stat-val" id="verisure-open-doors">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Climate sensors</div>
+            <div class="stat-val" id="verisure-climate-count">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Door/window sensors</div>
+            <div class="stat-val" id="verisure-sensor-count">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Changed by</div>
+            <div class="stat-val" id="verisure-changed-by" style="font-size:13px">—</div>
+          </div>
+        </div>
+
+        <!-- Climate sensors -->
+        <div id="verisure-climate-list" style="display:none; margin-bottom:14px">
+          <div class="section-label" style="margin-bottom:8px">Climate</div>
+          <div id="verisure-climate-rows" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(160px,1fr)); gap:10px"></div>
+        </div>
+
+        <!-- Door/window sensors -->
+        <div id="verisure-dw-list" style="display:none">
+          <div class="section-label" style="margin-bottom:8px">Doors &amp; Windows</div>
+          <div id="verisure-dw-rows" style="display:flex; flex-wrap:wrap; gap:8px"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Coming soon -->
     <div>
       <div class="section-label">Coming soon</div>
@@ -406,7 +447,59 @@ function fmtUptime(s) {
 function el(id) { return document.getElementById(id); }
 function setText(id, val) { const e = el(id); if (e) e.textContent = val; }
 
-// ── Render outside weather ────────────────────────────────────────────────
+// ── Render Verisure ───────────────────────────────────────────────────────
+function renderVerisure(d) {
+  const section = el('verisure-section');
+  if (!d.online) { section.style.display = 'none'; return; }
+  section.style.display = '';
+
+  // Alarm state badge
+  const armBadge = el('verisure-arm-badge');
+  const armState = d.alarm_state || 'UNKNOWN';
+  const armLabel = { ARMED_AWAY: 'Armed away', ARMED_HOME: 'Armed home', DISARMED: 'Disarmed' }[armState] || armState;
+  const armClass = { ARMED_AWAY: 'offline', ARMED_HOME: 'offline', DISARMED: 'online' }[armState] || '';
+  armBadge.textContent = armLabel;
+  armBadge.className = `badge ${armClass}`;
+
+  setText('verisure-open-doors',    d.open_doors ?? '—');
+  setText('verisure-climate-count', d.climate_count ?? '—');
+  setText('verisure-sensor-count',  d.sensor_count ?? '—');
+  setText('verisure-changed-by',    d.alarm_changed_by || '—');
+
+  // Climate sensor cards
+  const climateList = el('verisure-climate-list');
+  const climateRows = el('verisure-climate-rows');
+  if (d.climate?.length) {
+    climateList.style.display = '';
+    climateRows.innerHTML = d.climate.map(c => `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:6px">${c.name}</div>
+        <div style="font-family:var(--mono);font-size:20px">${c.temperature != null ? c.temperature.toFixed(1) : '—'}°C</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:3px">${c.humidity != null ? c.humidity + '% RH' : ''}</div>
+      </div>`).join('');
+  } else {
+    climateList.style.display = 'none';
+  }
+
+  // Door/window sensor pills
+  const dwList = el('verisure-dw-list');
+  const dwRows = el('verisure-dw-rows');
+  if (d.door_window?.length) {
+    dwList.style.display = '';
+    dwRows.innerHTML = d.door_window.map(s => {
+      const open = s.state === 'OPEN';
+      const col  = open ? 'var(--danger)' : 'var(--accent2)';
+      const bg   = open ? 'rgba(255,91,91,0.1)' : 'rgba(47,214,160,0.1)';
+      return `<div style="font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:20px;background:${bg};color:${col}">
+        ${s.name} · ${s.state}
+      </div>`;
+    }).join('');
+  } else {
+    dwList.style.display = 'none';
+  }
+}
+
+// ── Render outside weather ──────────────────────────────────────────────────────
 function renderWeather(d) {
   const online = d.online;
   el('weather-badge').textContent = online ? 'live' : 'offline';
@@ -563,6 +656,7 @@ async function poll() {
     setText('last-updated', new Date(data.timestamp + 'Z').toLocaleTimeString());
 
     const devices = data.devices || {};
+    if (devices.verisure)          renderVerisure(devices.verisure);
     if (devices.outside_weather)   renderWeather(devices.outside_weather);
     if (devices.s9_miner)          renderMiner(devices.s9_miner);
     if (devices.electricity_price) renderPrice(devices.electricity_price);
