@@ -380,6 +380,7 @@ const API = '';  // empty = same origin; set to 'http://raspberrypi.local:8000' 
 
 // ── Config (loaded from server on boot) ───────────────────────────────────
 let POLL_MS = 10_000;
+let RULE_CFG = {};   // populated from /api/config on boot
 
 async function loadConfig() {
   try {
@@ -389,6 +390,9 @@ async function loadConfig() {
     if (secs) POLL_MS = secs * 1000;
     const title = cfg?.dashboard?.title;
     if (title) document.title = title;
+    // Store the first automation rule config for the dashboard display
+    const rules = cfg?.automation?.rules || [];
+    if (rules.length) RULE_CFG = rules[0];
   } catch (e) {
     console.warn('Could not load server config, using defaults');
   }
@@ -603,31 +607,60 @@ function renderMiner(d) {
 }
 
 // ── Render automation rule status ────────────────────────────────────────────
-// Mirrors the Python logic in MinerTempPriceRule.evaluate() so the dashboard
-// shows what the automator would decide right now, without a separate API call.
-const TEMP_ON = 20, TEMP_OFF = 22, PRICE_HYS = 20;
+// Mirrors MinerTempPriceRule.evaluate(). Values read from RULE_CFG (loaded
+// from /api/config on boot) so config.json changes are always reflected.
 
-function renderMinerRule(weather, price, miner) {
-  const temp      = weather.temperature_c;
-  const priceNow  = price.price_now_ore;
-  const priceAvg  = price.today_avg_ore;
-  const mining    = miner?.mining_active;
+function renderMinerRule(weather, price, miner, verisure) {
+  const tempOn       = RULE_CFG.temp_on        ?? 20;
+  const tempOff      = RULE_CFG.temp_off       ?? 22;
+  const priceHys     = RULE_CFG.price_hys_ore  ?? 20;
+  const indoorSensor = RULE_CFG.indoor_sensor  ?? null;
+  const indoorOn     = RULE_CFG.indoor_temp_on  ?? 22;
+  const indoorOff    = RULE_CFG.indoor_temp_off ?? 24;
+
+  const temp     = weather.temperature_c;
+  const priceNow = price.price_now_ore;
+  const priceAvg = price.today_avg_ore;
+  const mining   = miner?.mining_active;
 
   if (temp == null || priceNow == null || priceAvg == null) return;
 
-  const threshOn  = priceAvg - PRICE_HYS;
-  const threshOff = priceAvg + PRICE_HYS;
+  const threshOn  = priceAvg - priceHys;
+  const threshOff = priceAvg + priceHys;
+
+  // Indoor temp from Verisure climate sensors
+  let indoorTemp = null;
+  if (indoorSensor && verisure?.climate?.length) {
+    const sensor = verisure.climate.find(
+      c => c.name?.toLowerCase() === indoorSensor.toLowerCase()
+    );
+    indoorTemp = sensor?.temperature ?? null;
+  }
+
+  // Evaluate each condition independently (mirrors Python logic)
+  const outsideGood = temp < tempOn;
+  const outsideBad  = temp > tempOff;
+  const priceGood   = priceNow < threshOn;
+  const priceBad    = priceNow > threshOff;
+  const indoorGood  = indoorTemp == null ? true : indoorTemp < indoorOn;
+  const indoorBad   = indoorTemp == null ? false : indoorTemp > indoorOff;
 
   let state, label, reason;
 
-  if (temp < TEMP_ON && priceNow < threshOn) {
+  if (outsideGood && priceGood && indoorGood) {
     state = 'run'; label = 'RESUME';
-    reason = `temp ${temp}°C < ${TEMP_ON}°C  ·  price ${priceNow.toFixed(0)} öre < avg${threshOn > 0 ? '-' : '+'}${Math.abs(PRICE_HYS)} (${threshOn.toFixed(0)} öre)`;
-  } else if (temp > TEMP_OFF || priceNow > threshOff) {
+    const parts = [
+      `outside ${temp}°C < ${tempOn}°C`,
+      `price ${priceNow.toFixed(0)} öre < avg-${priceHys} (${threshOn.toFixed(0)} öre)`,
+    ];
+    if (indoorTemp != null) parts.push(`indoor ${indoorTemp}°C < ${indoorOn}°C`);
+    reason = parts.join('  ·  ');
+  } else if (outsideBad || priceBad || indoorBad) {
     state = 'pause'; label = 'PAUSE';
     const reasons = [];
-    if (temp > TEMP_OFF)     reasons.push(`temp ${temp}°C > ${TEMP_OFF}°C`);
-    if (priceNow > threshOff) reasons.push(`price ${priceNow.toFixed(0)} öre > avg+${PRICE_HYS} (${threshOff.toFixed(0)} öre)`);
+    if (outsideBad) reasons.push(`outside ${temp}°C > ${tempOff}°C`);
+    if (priceBad)   reasons.push(`price ${priceNow.toFixed(0)} öre > avg+${priceHys} (${threshOff.toFixed(0)} öre)`);
+    if (indoorBad)  reasons.push(`indoor ${indoorTemp}°C > ${indoorOff}°C`);
     reason = reasons.join('  ·  ');
   } else {
     state = 'hold'; label = 'HOLD';
@@ -638,9 +671,15 @@ function renderMinerRule(weather, price, miner) {
   stateEl.textContent = label;
   stateEl.className = `rule-state ${state}`;
   setText('rule-reason', reason);
-  setText('rule-values',
-    `temp ${temp}°C  ·  price ${priceNow.toFixed(0)} öre  ·  avg ${priceAvg.toFixed(0)} öre  ·  band ${threshOn.toFixed(0)}–${threshOff.toFixed(0)} öre`
-  );
+
+  const vals = [
+    `outside ${temp}°C`,
+    `price ${priceNow.toFixed(0)} öre`,
+    `avg ${priceAvg.toFixed(0)} öre`,
+    `band ${threshOn.toFixed(0)}–${threshOff.toFixed(0)} öre`,
+  ];
+  if (indoorTemp != null) vals.push(`indoor ${indoorTemp}°C`);
+  setText('rule-values', vals.join('  ·  '));
 }
 
 // ── Fetch & update ──────────────────────────────────────────────────────────────────────
@@ -664,7 +703,7 @@ async function poll() {
 
     // Automation rule status — derived from live device data, not a separate API call
     if (devices.outside_weather && devices.electricity_price) {
-      renderMinerRule(devices.outside_weather, devices.electricity_price, devices.s9_miner);
+      renderMinerRule(devices.outside_weather, devices.electricity_price, devices.s9_miner, devices.verisure);
     }
 
   } catch (e) {
