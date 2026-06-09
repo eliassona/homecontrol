@@ -134,25 +134,39 @@ class MinerTempPriceRule(MinerRule):
         self.indoor_temp_off   = float(cfg.get("indoor_temp_off",  24.0))
 
     def _get_indoor_temp(self) -> Optional[float]:
-        """Look up the configured climate sensor from the Verisure snapshot."""
+        """
+        Look up the configured climate sensor from the Verisure snapshot.
+        Returns the temperature, or None if sensor is not configured.
+        Raises RuntimeError if configured but unavailable/not found — caller
+        should treat this as a blocking condition (hold state).
+        """
         if not self.indoor_sensor:
-            return None   # not configured — condition is ignored
+            return None   # not configured — condition is ignored entirely
 
         verisure = self.registry.get(self.verisure_id)
-        if not verisure or not verisure.cached_snapshot().get("online"):
-            log.warning(f"[{self.name}] Verisure offline — ignoring indoor temp")
-            return None
+        if not verisure:
+            raise RuntimeError(f"Verisure device '{self.verisure_id}' not registered")
 
-        climates = verisure.cached_snapshot().get("climate", [])
+        snap = verisure.cached_snapshot()
+        if not snap.get("online"):
+            raise RuntimeError(f"Verisure offline (error: {snap.get('error', 'unknown')})")
+
+        climates = snap.get("climate", [])
+        if not climates:
+            raise RuntimeError("Verisure has no climate data yet — still polling?")
+
         for c in climates:
             if c.get("name", "").lower() == self.indoor_sensor.lower():
-                return c.get("temperature")
+                temp = c.get("temperature")
+                if temp is None:
+                    raise RuntimeError(f"Sensor '{self.indoor_sensor}' found but has no temperature value")
+                return temp
 
-        log.warning(
-            f"[{self.name}] Indoor sensor '{self.indoor_sensor}' not found in Verisure climate data. "
-            f"Available: {[c.get('name') for c in climates]}"
+        available = [c.get("name") for c in climates]
+        raise RuntimeError(
+            f"Indoor sensor '{self.indoor_sensor}' not found. "
+            f"Available: {available}"
         )
-        return None
 
     async def evaluate(self) -> Optional[bool]:
         # ── Fetch outside weather snapshot ───────────────────────────────────
@@ -184,21 +198,25 @@ class MinerTempPriceRule(MinerRule):
         threshold_off = price_avg + self.price_hys
 
         # ── Fetch indoor temperature (optional) ──────────────────────────────
-        indoor_temp = self._get_indoor_temp()
+        indoor_temp = None
+        indoor_configured = bool(self.indoor_sensor)
+        try:
+            indoor_temp = self._get_indoor_temp()
+        except RuntimeError as e:
+            if indoor_configured:
+                # Sensor is configured but unavailable — hold, don't guess
+                log.warning(f"[{self.name}] Indoor temp unavailable: {e} — holding state")
+                return None
 
         log.info(
             f"[{self.name}] "
             f"outside={temp}°C  "
             f"price={price_now:.1f} öre  avg={price_avg:.1f} öre  "
             f"on<{threshold_on:.1f}  off>{threshold_off:.1f}"
-            + (f"  indoor={indoor_temp}°C" if indoor_temp is not None else "")
+            + (f"  indoor={indoor_temp}°C" if indoor_temp is not None else "  indoor=n/a")
         )
 
         # ── Decision ─────────────────────────────────────────────────────────
-        # Each condition is evaluated independently.
-        # A single PAUSE trigger overrides everything.
-        # RESUME requires ALL conditions to be favourable.
-
         #   Check outdoor temp
         outside_good = temp < self.temp_on
         outside_bad  = temp > self.temp_off
@@ -207,8 +225,8 @@ class MinerTempPriceRule(MinerRule):
         price_good = price_now < threshold_on
         price_bad  = price_now > threshold_off
 
-        #   Check indoor temp (only if sensor is configured and available)
-        if indoor_temp is not None:
+        #   Check indoor temp (only if sensor is configured)
+        if indoor_configured and indoor_temp is not None:
             indoor_good = indoor_temp < self.indoor_temp_on
             indoor_bad  = indoor_temp > self.indoor_temp_off
         else:
