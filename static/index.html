@@ -161,6 +161,55 @@
   </header>
 
   <main>
+    <!-- Power meter -->
+    <div>
+      <div class="section-label">Power</div>
+      <div class="miner-panel" id="power-panel">
+        <div class="miner-header">
+          <h2>Smart Meter</h2>
+          <span class="badge offline" id="power-badge">offline</span>
+        </div>
+        <div class="hashrate-row">
+          <span class="hashrate-big" id="power-net" style="color:var(--text)">—</span>
+          <span class="hashrate-unit">kW</span>
+          <span class="hashrate-label" style="margin-left:8px" id="power-direction">—</span>
+        </div>
+        <div class="miner-stats">
+          <div class="stat">
+            <div class="stat-label">L1</div>
+            <div class="stat-val" id="power-l1">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">L2</div>
+            <div class="stat-val" id="power-l2">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">L3</div>
+            <div class="stat-val" id="power-l3">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">This hour</div>
+            <div class="stat-val" id="power-hour">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Voltage L1</div>
+            <div class="stat-val" id="power-v1">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Gas this hour</div>
+            <div class="stat-val" id="power-gas">—</div>
+          </div>
+        </div>
+        <div class="pool-bar">
+          T1: <span id="power-t1">—</span> kWh
+          &nbsp;·&nbsp;
+          T2: <span id="power-t2">—</span> kWh
+          &nbsp;·&nbsp;
+          Returned: <span id="power-ret">—</span> kWh
+        </div>
+      </div>
+    </div>
+
     <!-- Outside weather -->
     <div>
       <div class="section-label" id="weather-label">Outside weather</div>
@@ -517,6 +566,38 @@ function renderVerisure(d) {
   }
 }
 
+// ── Render power meter ───────────────────────────────────────────────────────
+function renderPower(d) {
+  const online = d.online;
+  el('power-badge').textContent = online ? 'live' : 'offline';
+  el('power-badge').className   = `badge ${online ? 'online' : 'offline'}`;
+  if (!online) return;
+
+  const net = d.net_power_kw ?? 0;
+  const returning = net < 0;
+  el('power-net').textContent = Math.abs(net).toFixed(3);
+  el('power-net').style.color = returning ? 'var(--accent2)' : 'var(--text)';
+  setText('power-direction', returning ? '← to grid' : 'from grid →');
+
+  // Phase power — show W if under 1kW, else kW
+  function fmtW(w) {
+    if (w == null) return '—';
+    return Math.abs(w) < 1000 ? `${w} W` : `${(w/1000).toFixed(2)} kW`;
+  }
+  setText('power-l1', fmtW(d.power_l1_w));
+  setText('power-l2', fmtW(d.power_l2_w));
+  setText('power-l3', fmtW(d.power_l3_w));
+  setText('power-hour',  d.energy_this_hour_kwh != null ? d.energy_this_hour_kwh.toFixed(3) + ' kWh' : '—');
+  setText('power-v1',    d.voltage_l1_v != null ? d.voltage_l1_v.toFixed(1) + ' V' : '—');
+  setText('power-gas',   d.gas_this_hour_m3 != null ? d.gas_this_hour_m3.toFixed(3) + ' m³' : '—');
+
+  const t1 = (d.energy_delivered_t1_kwh ?? 0) + (d.energy_delivered_t2_kwh ?? 0);
+  setText('power-t1',  (d.energy_delivered_t1_kwh ?? 0).toFixed(1));
+  setText('power-t2',  (d.energy_delivered_t2_kwh ?? 0).toFixed(1));
+  const ret = (d.energy_returned_t1_kwh ?? 0) + (d.energy_returned_t2_kwh ?? 0);
+  setText('power-ret', ret.toFixed(1));
+}
+
 // ── Render outside weather ──────────────────────────────────────────────────────
 function renderWeather(d) {
   const online = d.online;
@@ -780,6 +861,7 @@ async function poll() {
     setText('last-updated', new Date(data.timestamp + 'Z').toLocaleTimeString());
 
     const devices = data.devices || {};
+    if (devices.smart_meter)       renderPower(devices.smart_meter);
     if (devices.verisure)          renderVerisure(devices.verisure);
     if (devices.outside_weather)   renderWeather(devices.outside_weather);
     if (devices.s9_miner)          renderMiner(devices.s9_miner);
