@@ -289,15 +289,28 @@
     <div>
       <div class="section-label">Automation</div>
       <div id="automation-rules" style="display:flex; flex-direction:column; gap:10px">
-        <!-- filled by JS -->
-        <div class="rule-card" id="rule-miner-temp-price">
-          <div>
+        <div class="rule-card" id="rule-miner-temp-price" style="cursor:pointer" title="Click to see control logic">
+          <div style="flex:1">
             <div class="rule-name">Miner — temp &amp; price</div>
             <div class="rule-reason" id="rule-reason">Waiting for first evaluation…</div>
             <div class="rule-values" id="rule-values"></div>
           </div>
-          <div class="rule-state hold" id="rule-state">—</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div class="rule-state hold" id="rule-state">—</div>
+            <div style="color:var(--muted);font-size:14px">⋯</div>
+          </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Logic diagram modal -->
+    <div id="logic-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);align-items:center;justify-content:center">
+      <div style="background:var(--panel);border:1px solid var(--border2);border-radius:16px;padding:24px;max-width:660px;width:calc(100% - 40px);max-height:90vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <span style="font-size:14px;font-weight:600">Control logic</span>
+          <button id="logic-close" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:0 4px">✕</button>
+        </div>
+        <svg id="logic-svg" viewBox="0 0 620 680" width="100%" style="overflow:visible"></svg>
       </div>
     </div>
 
@@ -784,12 +797,197 @@ async function poll() {
   }
 }
 
+// ── Logic diagram ────────────────────────────────────────────────────────────
+function buildLogicDiagram() {
+  const r = RULE_CFG;
+  const tempOn    = r.temp_on        ?? 20;
+  const tempOff   = r.temp_off       ?? 22;
+  const priceHys  = r.price_hys_ore  ?? 20;
+  const indoorOn  = r.indoor_temp_on  ?? 22;
+  const indoorOff = r.indoor_temp_off ?? 24;
+  const indoorName = r.indoor_sensor ?? null;
+  const hasIndoor = !!indoorName;
+
+  const svgH = hasIndoor ? 680 : 560;
+  const svg = el('logic-svg');
+  svg.setAttribute('viewBox', `0 0 620 ${svgH}`);
+
+  const NS = 'http://www.w3.org/2000/svg';
+  function mk(tag, attrs, text) {
+    const el = document.createElementNS(NS, tag);
+    for (const [k,v] of Object.entries(attrs)) el.setAttribute(k, v);
+    if (text != null) el.textContent = text;
+    return el;
+  }
+  function arrow(x1,y1,x2,y2) {
+    const g = mk('g',{});
+    g.appendChild(mk('line',{x1,y1,x2,y2,stroke:'var(--muted)',
+      'stroke-width':'1','marker-end':'url(#arr-m)'}));
+    return g;
+  }
+  function box(x,y,w,h,fill,stroke,r='8') {
+    return mk('rect',{x,y,width:w,height:h,rx:r,fill,stroke,'stroke-width':'0.5'});
+  }
+  function txt(x,y,t,opts={}) {
+    return mk('text',{x,y,'dominant-baseline':'central','text-anchor':opts.anchor||'middle',
+      fill:opts.fill||'var(--text-color, #e8eaf0)',
+      'font-size':opts.size||'12','font-family':'Syne,sans-serif',
+      'font-weight':opts.weight||'normal'}, t);
+  }
+  function label(x,y,t) {
+    return mk('text',{x,y,'dominant-baseline':'central','text-anchor':'middle',
+      fill:'var(--muted-color, #6b7080)','font-size':'10',
+      'font-family':'DM Mono,monospace'}, t);
+  }
+
+  svg.innerHTML = '';
+
+  // Defs
+  const defs = mk('defs',{});
+  const marker = mk('marker',{id:'arr-m',viewBox:'0 0 10 10',refX:'8',refY:'5',
+    markerWidth:'6',markerHeight:'6',orient:'auto-start-reverse'});
+  marker.appendChild(mk('path',{d:'M2 1L8 5L2 9',fill:'none',stroke:'var(--muted-color, #6b7080)',
+    'stroke-width':'1.5','stroke-linecap':'round','stroke-linejoin':'round'}));
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
+  // Colors
+  const C = {
+    gray:   {fill:'rgba(255,255,255,0.04)', stroke:'rgba(255,255,255,0.15)'},
+    blue:   {fill:'rgba(91,143,255,0.12)',  stroke:'rgba(91,143,255,0.4)'},
+    amber:  {fill:'rgba(240,165,0,0.12)',   stroke:'rgba(240,165,0,0.4)'},
+    teal:   {fill:'rgba(47,214,160,0.12)',  stroke:'rgba(47,214,160,0.4)'},
+    green:  {fill:'rgba(47,214,160,0.2)',   stroke:'rgba(47,214,160,0.6)'},
+    red:    {fill:'rgba(255,91,91,0.2)',    stroke:'rgba(255,91,91,0.5)'},
+  };
+  function coloredBox(x,y,w,h,c) {
+    const g = mk('g',{});
+    g.appendChild(box(x,y,w,h,c.fill,c.stroke));
+    return g;
+  }
+
+  const CX = 310;
+
+  // ── Every hour ──
+  let g = coloredBox(200, 20, 220, 40, C.gray);
+  g.appendChild(txt(CX, 40, 'Check every hour', {weight:'600'}));
+  svg.appendChild(g);
+  svg.appendChild(arrow(CX, 60, CX, 94));
+
+  // ── Outside temp ──
+  g = coloredBox(160, 94, 300, 56, C.blue);
+  g.appendChild(txt(CX, 112, 'Outside temperature', {weight:'600'}));
+  g.appendChild(label(CX, 132, `Resume < ${tempOn}°C  ·  Pause > ${tempOff}°C`));
+  svg.appendChild(g);
+  svg.appendChild(arrow(CX, 150, CX, 184));
+  svg.appendChild(mk('text',{x:CX+8,y:172,'font-size':'10',fill:'var(--muted-color,#6b7080)',
+    'font-family':'DM Mono,monospace','dominant-baseline':'central'}, 'ok'));
+
+  // ── Price ──
+  g = coloredBox(110, 184, 400, 56, C.amber);
+  g.appendChild(txt(CX, 202, 'Electricity price', {weight:'600'}));
+  g.appendChild(label(CX, 222, `Resume < avg−${priceHys} öre  ·  Pause > avg+${priceHys} öre`));
+  svg.appendChild(g);
+  svg.appendChild(arrow(CX, 240, CX, 274));
+  svg.appendChild(mk('text',{x:CX+8,y:262,'font-size':'10',fill:'var(--muted-color,#6b7080)',
+    'font-family':'DM Mono,monospace','dominant-baseline':'central'}, 'ok'));
+
+  let resumeY, holdY, pauseX, pauseY;
+
+  if (hasIndoor) {
+    // ── Indoor temp ──
+    g = coloredBox(120, 274, 380, 56, C.teal);
+    g.appendChild(txt(CX, 292, indoorName, {weight:'600'}));
+    g.appendChild(label(CX, 312, `Resume < ${indoorOn}°C  ·  Pause > ${indoorOff}°C`));
+    svg.appendChild(g);
+    svg.appendChild(arrow(CX, 330, CX, 364));
+    svg.appendChild(mk('text',{x:CX+8,y:352,'font-size':'10',fill:'var(--muted-color,#6b7080)',
+      'font-family':'DM Mono,monospace','dominant-baseline':'central'}, 'all ok'));
+    resumeY = 364; holdY = 500; pauseX = 490; pauseY = 364;
+  } else {
+    resumeY = 274; holdY = 400; pauseX = 490; pauseY = 274;
+  }
+
+  // ── Resume ──
+  g = coloredBox(200, resumeY, 220, 40, C.green);
+  g.appendChild(txt(CX, resumeY + 20, '▶  Resume miner', {weight:'600',
+    fill:'rgba(47,214,160,0.9)'}));
+  svg.appendChild(g);
+
+  // ── Pause (right) ──
+  g = coloredBox(456, pauseY, 150, 40, C.red);
+  g.appendChild(txt(531, pauseY + 20, '⏸  Pause miner', {weight:'600',
+    fill:'rgba(255,91,91,0.9)'}));
+  svg.appendChild(g);
+
+  // ── Hold (left via dead-zone paths) ──
+  g = coloredBox(200, holdY, 220, 40, C.gray);
+  g.appendChild(txt(CX, holdY + 20, 'Hold current state', {weight:'600',
+    fill:'rgba(255,255,255,0.5)'}));
+  svg.appendChild(g);
+
+  // Dead-zone left-side pipes → hold
+  const deadPipes = hasIndoor
+    ? [[160,122,60,122],[110,212,40,212],[120,302,20,302]]
+    : [[160,122,60,122],[110,212,40,212]];
+  deadPipes.forEach(([sx,sy,lx], idx) => {
+    const p = mk('path',{d:`M${sx} ${sy} L${lx} ${sy} L${lx} ${holdY+20} L200 ${holdY+20}`,
+      fill:'none',stroke:'rgba(255,255,255,0.12)','stroke-width':'1',
+      'marker-end':'url(#arr-m)'});
+    svg.appendChild(p);
+  });
+  svg.appendChild(label(35, (hasIndoor ? 222 : 167), 'dead zone'));
+
+  // Pause right-side pipes
+  const pausePipes = hasIndoor
+    ? [{sx:460,sy:122},{sx:510,sy:212},{sx:500,sy:302}]
+    : [{sx:460,sy:122},{sx:510,sy:212}];
+  pausePipes.forEach(({sx,sy}) => {
+    const p = mk('path',{d:`M${sx} ${sy} L570 ${sy} L570 ${pauseY+20} L606 ${pauseY+20}`,
+      fill:'none',stroke:'rgba(255,91,91,0.25)','stroke-width':'1',
+      'marker-end':'url(#arr-m)'});
+    svg.appendChild(p);
+  });
+
+  // Legend
+  const ly = svgH - 22;
+  [[10,'rgba(255,255,255,0.15)','Dead zone → hold'],
+   [180,'rgba(255,91,91,0.5)','Any bad → pause'],
+   [340,'rgba(47,214,160,0.5)','All good → resume']
+  ].forEach(([x,c,t]) => {
+    svg.appendChild(mk('rect',{x,y:ly-6,width:12,height:12,rx:'3',fill:c}));
+    svg.appendChild(mk('text',{x:x+16,y:ly,'font-size':'10',
+      'font-family':'DM Mono,monospace','dominant-baseline':'central',
+      fill:'var(--muted-color,#6b7080)'}, t));
+  });
+}
+
+function showLogicModal() {
+  buildLogicDiagram();
+  const modal = el('logic-modal');
+  modal.style.display = 'flex';
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────
 (async () => {
   await loadConfig();
   await poll();
   setInterval(poll, POLL_MS);
 })();
+
+// Automation card click → show logic diagram
+el('rule-miner-temp-price').addEventListener('click', showLogicModal);
+
+// Modal close
+el('logic-close').addEventListener('click', () => {
+  el('logic-modal').style.display = 'none';
+});
+el('logic-modal').addEventListener('click', e => {
+  if (e.target === el('logic-modal')) el('logic-modal').style.display = 'none';
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') el('logic-modal').style.display = 'none';
+});
 
 window.addEventListener('resize', drawSparkline);
 </script>
