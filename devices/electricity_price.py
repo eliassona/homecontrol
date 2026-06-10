@@ -145,6 +145,20 @@ class ElectricityPrice(BaseDevice):
             for s in sorted_slots[:8]
         ]
 
+        # Full 15-min schedule for chart (96 slots), with local time labels
+        schedule_15min = []
+        for s in self._schedule:
+            try:
+                t = datetime.fromisoformat(s["time_start"])
+                local = t.astimezone(timezone(timedelta(hours=2)))
+                schedule_15min.append({
+                    "time":      local.strftime("%H:%M"),
+                    "ore":       round(s.get("SEK_per_kWh", 0) * 100, 2),
+                    "full_hour": local.minute == 0,   # True on :00 slots
+                })
+            except Exception:
+                continue
+
         return {
             "price_now_sek":    price_sek,
             "price_now_ore":    price_ore,
@@ -154,6 +168,7 @@ class ElectricityPrice(BaseDevice):
             "today_max_ore":    today_max,
             "today_avg_ore":    today_avg,
             "cheapest_periods": cheapest,
+            "schedule_hourly":  schedule_15min,
             "price_area":       self.price_area,
             "source":           "elprisetjustnu.se",
         }
