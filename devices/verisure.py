@@ -151,8 +151,10 @@ def _fetch_all(username: str, cookie_file: str, installation, door_labels: dict)
             _jar = _pickle.load(_f)
 
         import requests as _requests
+        # Use the same base URL the session resolved to (automation01 vs automation02)
+        base_url = getattr(session, "_base_url", None) or "https://automation01.verisure.com"
         resp = _requests.post(
-            "https://automation01.verisure.com/graphql",
+            f"{base_url}/graphql",
             cookies=_jar,
             headers={"APPLICATION_ID": "PS_PYTHON", "Content-Type": "application/json"},
             json={
