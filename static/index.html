@@ -171,7 +171,7 @@
         </div>
         <div class="hashrate-row">
           <span class="hashrate-big" id="power-net" style="color:var(--text)">—</span>
-          <span class="hashrate-unit">kW</span>
+          <span class="hashrate-unit" id="power-unit">W</span>
           <span class="hashrate-label" style="margin-left:8px" id="power-direction">—</span>
         </div>
         <div class="miner-stats">
@@ -188,12 +188,20 @@
             <div class="stat-val" id="power-l3">—</div>
           </div>
           <div class="stat">
-            <div class="stat-label">This hour</div>
-            <div class="stat-val" id="power-hour">—</div>
-          </div>
-          <div class="stat">
             <div class="stat-label">Voltage L1</div>
             <div class="stat-val" id="power-v1">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Voltage L2</div>
+            <div class="stat-val" id="power-v2">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Voltage L3</div>
+            <div class="stat-val" id="power-v3">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">This hour</div>
+            <div class="stat-val" id="power-hour">—</div>
           </div>
           <div class="stat">
             <div class="stat-label">Gas this hour</div>
@@ -573,29 +581,33 @@ function renderPower(d) {
   el('power-badge').className   = `badge ${online ? 'online' : 'offline'}`;
   if (!online) return;
 
-  const net = d.net_power_kw ?? 0;
-  const returning = net < 0;
-  el('power-net').textContent = Math.abs(net).toFixed(3);
+  const netW = d.net_power_w ?? 0;
+  const returning = netW < 0;
+  // Show W if under 1000, else kW
+  const netAbs = Math.abs(netW);
+  el('power-net').textContent = netAbs >= 1000
+    ? (netAbs / 1000).toFixed(2)
+    : netAbs;
+  el('power-unit').textContent = netAbs >= 1000 ? 'kW' : 'W';
   el('power-net').style.color = returning ? 'var(--accent2)' : 'var(--text)';
   setText('power-direction', returning ? '← to grid' : 'from grid →');
 
-  // Phase power — show W if under 1kW, else kW
   function fmtW(w) {
     if (w == null) return '—';
-    return Math.abs(w) < 1000 ? `${w} W` : `${(w/1000).toFixed(2)} kW`;
+    return `${w} W`;
   }
   setText('power-l1', fmtW(d.power_l1_w));
   setText('power-l2', fmtW(d.power_l2_w));
   setText('power-l3', fmtW(d.power_l3_w));
-  setText('power-hour',  d.energy_this_hour_kwh != null ? d.energy_this_hour_kwh.toFixed(3) + ' kWh' : '—');
-  setText('power-v1',    d.voltage_l1_v != null ? d.voltage_l1_v.toFixed(1) + ' V' : '—');
-  setText('power-gas',   d.gas_this_hour_m3 != null ? d.gas_this_hour_m3.toFixed(3) + ' m³' : '—');
-
-  const t1 = (d.energy_delivered_t1_kwh ?? 0) + (d.energy_delivered_t2_kwh ?? 0);
-  setText('power-t1',  (d.energy_delivered_t1_kwh ?? 0).toFixed(1));
-  setText('power-t2',  (d.energy_delivered_t2_kwh ?? 0).toFixed(1));
+  setText('power-hour', d.energy_this_hour_kwh != null ? d.energy_this_hour_kwh.toFixed(3) + ' kWh' : '—');
+  setText('power-v1',   d.voltage_l1_v != null ? d.voltage_l1_v.toFixed(1) + ' V' : '—');
+  setText('power-v2',   d.voltage_l2_v != null ? d.voltage_l2_v.toFixed(1) + ' V' : '—');
+  setText('power-v3',   d.voltage_l3_v != null ? d.voltage_l3_v.toFixed(1) + ' V' : '—');
+  setText('power-gas',  d.gas_this_hour_m3 != null ? d.gas_this_hour_m3.toFixed(3) + ' m³' : '—');
+  setText('power-t1',   (d.energy_delivered_t1_kwh ?? 0).toFixed(1));
+  setText('power-t2',   (d.energy_delivered_t2_kwh ?? 0).toFixed(1));
   const ret = (d.energy_returned_t1_kwh ?? 0) + (d.energy_returned_t2_kwh ?? 0);
-  setText('power-ret', ret.toFixed(1));
+  setText('power-ret',  ret.toFixed(1));
 }
 
 // ── Render outside weather ──────────────────────────────────────────────────────
