@@ -412,6 +412,20 @@
       </div>
     </div>
 
+    <!-- Room sensors -->
+    <div id="room-sensors-section" style="display:none">
+      <div class="section-label">Room sensors</div>
+      <div id="room-sensors-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap:14px">
+        <!-- populated by JS -->
+      </div>
+    </div>
+
+    <!-- Room sensors -->
+    <div id="room-sensors-section" style="display:none">
+      <div class="section-label">Room sensors</div>
+      <div id="room-sensors-grid" class="cards"></div>
+    </div>
+
     <!-- Coming soon -->
     <div>
       <div class="section-label">Coming soon</div>
@@ -572,6 +586,78 @@ function renderVerisure(d) {
   } else {
     dwList.style.display = 'none';
   }
+}
+
+// ── Render room sensors ──────────────────────────────────────────────────────
+function renderRoomSensors(devices) {
+  // Collect all room_sensor type devices
+  const sensors = Object.entries(devices)
+    .filter(([_, d]) => d.device_type === 'room_sensor' || d.room != null)
+    .map(([id, d]) => ({id, ...d}));
+
+  const section = el('room-sensors-section');
+  const grid    = el('room-sensors-grid');
+  if (!sensors.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+
+  grid.innerHTML = sensors.map(d => {
+    const hasData = d.data_available && d.online;
+    const temp    = d.temperature_c;
+    const hum     = d.humidity_pct;
+    const batt    = d.battery_pct;
+    const tempCol = temp == null ? 'var(--muted)'
+                  : temp < 18 ? 'var(--accent3)'
+                  : temp > 25 ? 'var(--danger)'
+                  : 'var(--text)';
+
+    return `<div style="background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:10px;display:flex;justify-content:space-between">
+        <span>${d.room || d.id}</span>
+        ${batt != null ? `<span style="color:${batt < 20 ? 'var(--danger)' : 'var(--muted)'}">🔋 ${batt}%</span>` : ''}
+      </div>
+      ${hasData ? `
+        <div style="font-family:var(--mono);font-size:32px;font-weight:500;color:${tempCol};line-height:1">
+          ${temp != null ? temp.toFixed(1) : '—'}<span style="font-size:14px;color:var(--muted)"> °C</span>
+        </div>
+        <div style="font-family:var(--mono);font-size:13px;color:var(--muted);margin-top:8px">
+          ${hum != null ? hum.toFixed(0) + '% RH' : '—'}
+        </div>
+      ` : `<div style="font-family:var(--mono);font-size:13px;color:var(--muted);margin-top:8px">
+        ${d.online ? 'Waiting for data…' : 'Offline'}
+      </div>`}
+    </div>`;
+  }).join('');
+}
+
+// ── Render room sensors ──────────────────────────────────────────────────────
+function renderRoomSensors(devices) {
+  // Collect all room_sensor type devices
+  const sensors = Object.entries(devices)
+    .filter(([, d]) => d.device_type === 'room_sensor' || d.room != null)
+    .map(([id, d]) => ({id, ...d}));
+
+  const section = el('room-sensors-section');
+  const grid    = el('room-sensors-grid');
+  if (!sensors.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+
+  grid.innerHTML = sensors.map(d => {
+    const online  = d.online && !d.stale;
+    const temp    = d.temperature != null ? d.temperature.toFixed(1) : '—';
+    const hum     = d.humidity   != null ? Math.round(d.humidity)    : '—';
+    const batt    = d.battery_pct != null ? d.battery_pct            : null;
+    const battCol = batt != null ? (batt > 50 ? 'var(--accent2)' : batt > 20 ? 'var(--accent)' : 'var(--danger)') : 'var(--muted)';
+    const tempCol = d.temperature != null
+      ? (d.temperature < 18 ? 'var(--accent3)' : d.temperature > 25 ? 'var(--danger)' : 'var(--text)')
+      : 'var(--muted)';
+    const staleNote = d.stale ? ' <span style="color:var(--muted);font-size:10px">(stale)</span>' : '';
+
+    return `<div class="card ${online ? '' : 'offline'}" style="--card-accent:var(--accent3)">
+      <div class="card-label">${d.room || d.room_name || d.id}${staleNote}</div>
+      <div class="card-value" style="color:${tempCol}">${temp}<span class="card-unit">°C</span></div>
+      <div class="card-sub">${hum !== '—' ? `${hum}% RH` : ''}${batt != null ? ` &nbsp;·&nbsp; <span style="color:${battCol}">${batt}% 🔋</span>` : ''}</div>
+    </div>`;
+  }).join('');
 }
 
 // ── Render power meter ───────────────────────────────────────────────────────
@@ -873,6 +959,7 @@ async function poll() {
     setText('last-updated', new Date(data.timestamp + 'Z').toLocaleTimeString());
 
     const devices = data.devices || {};
+    renderRoomSensors(devices);
     if (devices.smart_meter)       renderPower(devices.smart_meter);
     if (devices.verisure)          renderVerisure(devices.verisure);
     if (devices.outside_weather)   renderWeather(devices.outside_weather);

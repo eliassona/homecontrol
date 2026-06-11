@@ -19,6 +19,8 @@ from devices.electricity_price import ElectricityPrice
 from devices.outside_weather import OutsideWeather
 from devices.verisure import VerisureSystem
 from devices.smart_meter import SmartMeterGateway
+from devices.shelly_ht import ShellyHT
+from devices.shelly_ht import ShellyHT
 from api.automator import Automator
 
 logging.basicConfig(
@@ -45,6 +47,8 @@ DEVICE_CLASSES = {
     "outside_weather":   OutsideWeather,
     "verisure":          VerisureSystem,
     "smart_meter_gateway": SmartMeterGateway,
+    "shelly_ht":           ShellyHT,
+    "shelly_ht":           ShellyHT,
     # "room_sensor":   RoomSensor,
     # "power_meter":   PowerMeter,
     # "tesla_charger": TeslaCharger,
