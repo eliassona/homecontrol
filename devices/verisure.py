@@ -166,7 +166,11 @@ def _fetch_all(username: str, cookie_file: str, installation, door_labels: dict)
             },
             timeout=10,
         )
-        dws = resp.json().get("data", {}).get("installation", {}).get("doorWindows", [])
+        body = resp.json()
+        if "errors" in body:
+            raise ValueError(f"GraphQL errors: {body['errors']}")
+        dws = (body.get("data") or {}).get("installation") or {}
+        dws = dws.get("doorWindows") or []
         result["door_window"] = [
             {
                 # Priority: config door_labels > API area > deviceLabel
