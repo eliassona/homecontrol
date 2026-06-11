@@ -144,19 +144,13 @@ def _fetch_all(username: str, cookie_file: str, installation, door_labels: dict)
 
     # ── Door/window sensors ───────────────────────────────────────────────────
     # The library's door_window() query doesn't include device.area, so we
-    # use a direct GraphQL query that does.
+    # send a custom GraphQL query using session._post — this reuses the
+    # library's URL-rotation logic (automation01 vs automation02).
     try:
-        import pickle as _pickle
-        with open(cookie_file, "rb") as _f:
-            _jar = _pickle.load(_f)
-
-        import requests as _requests
-        # Use the same base URL the session resolved to (automation01 vs automation02)
-        base_url = getattr(session, "_base_url", None) or "https://automation01.verisure.com"
-        resp = _requests.post(
-            f"{base_url}/graphql",
-            cookies=_jar,
+        resp = session._post(
+            url="/graphql",
             headers={"APPLICATION_ID": "PS_PYTHON", "Content-Type": "application/json"},
+            cookies=session._cookies,
             json={
                 "operationName": "Q",
                 "variables": {"giid": session._giid},
@@ -166,7 +160,6 @@ def _fetch_all(username: str, cookie_file: str, installation, door_labels: dict)
                     "state reportTime } } }"
                 ),
             },
-            timeout=10,
         )
         body = resp.json()
         if "errors" in body:
