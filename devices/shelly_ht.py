@@ -57,9 +57,9 @@ class ShellyHT(BaseDevice):
 
     def __init__(
         self,
+        device_id: str,
         room_name: str = "",
         room: str = "",   # alias for room_name
-        device_id: str,
         broker_host: str = "localhost",
         broker_port: int = 1883,
         stale_minutes: int = 10,
