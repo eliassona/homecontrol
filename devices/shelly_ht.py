@@ -59,17 +59,19 @@ class ShellyHT(BaseDevice):
         self,
         device_id: str,
         room_name: str = "",
-        room: str = "",   # alias for room_name
-        broker_host: str = "localhost",
-        broker_port: int = 1883,
+        room: str = "",         # alias for room_name
+        broker_host: str = "",
+        broker_port: int = 0,
+        mqtt_host: str = "",    # alias for broker_host
+        mqtt_port: int = 0,     # alias for broker_port
         stale_minutes: int = 10,
         poll_interval: int = 60,
     ):
         super().__init__()
         self.room_name     = room_name or room or "Unknown"
         self.device_id     = device_id
-        self.broker_host   = broker_host
-        self.broker_port   = broker_port
+        self.broker_host   = broker_host or mqtt_host or "localhost"
+        self.broker_port   = broker_port or mqtt_port or 1883
         self.stale_minutes = stale_minutes
         self.poll_interval = poll_interval
 
