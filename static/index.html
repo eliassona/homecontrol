@@ -931,8 +931,10 @@ function renderMinerRule(weather, price, miner, verisure) {
   const tempOff      = RULE_CFG.temp_off       ?? 22;
   const priceHys     = RULE_CFG.price_hys_ore  ?? 20;
   const indoorSensor = RULE_CFG.indoor_sensor  ?? null;
-  const indoorOn     = RULE_CFG.indoor_temp_on  ?? 22;
-  const indoorOff    = RULE_CFG.indoor_temp_off ?? 24;
+  const indoorOn     = RULE_CFG.indoor_temp_on     ?? 22;
+  const indoorOff    = RULE_CFG.indoor_temp_off    ?? 24;
+  const heatOffset   = RULE_CFG.indoor_heat_offset ?? 0.5;
+  const heatThresh   = indoorOn - heatOffset;
 
   const temp     = weather.temperature_c;
   const priceNow = price.price_now_ore;
@@ -960,10 +962,14 @@ function renderMinerRule(weather, price, miner, verisure) {
   const priceBad    = priceNow > threshOff;
   const indoorGood  = indoorTemp == null ? true : indoorTemp < indoorOn;
   const indoorBad   = indoorTemp == null ? false : indoorTemp > indoorOff;
+  const tooCold     = indoorTemp != null && indoorTemp < heatThresh;
 
   let state, label, reason;
 
-  if (outsideGood && priceGood && indoorGood) {
+  if (tooCold && outsideGood) {
+    state = 'run'; label = 'RESUME';
+    reason = `❄ Too cold override: indoor ${indoorTemp}°C < ${heatThresh.toFixed(1)}°C — heating regardless of price`;
+  } else if (outsideGood && priceGood && indoorGood) {
     state = 'run'; label = 'RESUME';
     const parts = [
       `outside ${temp}°C < ${tempOn}°C`,
@@ -1036,8 +1042,9 @@ function buildLogicDiagram() {
   const tempOn    = r.temp_on        ?? 20;
   const tempOff   = r.temp_off       ?? 22;
   const priceHys  = r.price_hys_ore  ?? 20;
-  const indoorOn  = r.indoor_temp_on  ?? 22;
-  const indoorOff = r.indoor_temp_off ?? 24;
+  const indoorOn     = r.indoor_temp_on     ?? 22;
+  const indoorOff    = r.indoor_temp_off    ?? 24;
+  const heatOffset   = r.indoor_heat_offset ?? 0.5;
   const indoorName = r.indoor_sensor ?? null;
   const hasIndoor = !!indoorName;
 
@@ -1131,7 +1138,8 @@ function buildLogicDiagram() {
     // ── Indoor temp ──
     g = coloredBox(120, 274, 380, 56, C.teal);
     g.appendChild(txt(CX, 292, indoorName, {weight:'600'}));
-    g.appendChild(label(CX, 312, `Resume < ${indoorOn}°C  ·  Pause > ${indoorOff}°C`));
+    g.appendChild(label(CX, 308, `Resume < ${indoorOn}°C  ·  Pause > ${indoorOff}°C`));
+    g.appendChild(label(CX, 322, `Heat override < ${(indoorOn - heatOffset).toFixed(1)}°C (ignores price)`));
     svg.appendChild(g);
     svg.appendChild(arrow(CX, 330, CX, 364));
     svg.appendChild(mk('text',{x:CX+8,y:352,'font-size':'10',fill:'var(--muted-color,#6b7080)',

@@ -129,9 +129,11 @@ class MinerTempPriceRule(MinerRule):
         self.temp_on           = float(cfg.get("temp_on",          20.0))
         self.temp_off          = float(cfg.get("temp_off",         22.0))
         self.price_hys         = float(cfg.get("price_hys_ore",    20.0))
-        self.indoor_sensor     = cfg.get("indoor_sensor")           # e.g. "Hall, Entré"
-        self.indoor_temp_on    = float(cfg.get("indoor_temp_on",   22.0))
-        self.indoor_temp_off   = float(cfg.get("indoor_temp_off",  24.0))
+        self.indoor_sensor       = cfg.get("indoor_sensor")           # e.g. "Hall, Entré"
+        self.indoor_temp_on      = float(cfg.get("indoor_temp_on",      22.0))
+        self.indoor_temp_off     = float(cfg.get("indoor_temp_off",     24.0))
+        self.indoor_heat_offset  = float(cfg.get("indoor_heat_offset",   0.5))
+        # If indoor_temp < indoor_temp_on - indoor_heat_offset → resume regardless of price
 
     def _get_indoor_temp(self) -> Optional[float]:
         """
@@ -226,12 +228,25 @@ class MinerTempPriceRule(MinerRule):
         price_bad  = price_now > threshold_off
 
         #   Check indoor temp (only if sensor is configured)
+        too_cold = False
         if indoor_configured and indoor_temp is not None:
             indoor_good = indoor_temp < self.indoor_temp_on
             indoor_bad  = indoor_temp > self.indoor_temp_off
+            # "Too cold" override: resume regardless of price if room needs heating
+            heat_threshold = self.indoor_temp_on - self.indoor_heat_offset
+            too_cold = indoor_temp < heat_threshold
+            if too_cold:
+                log.info(
+                    f"[{self.name}] ❄ Too cold override: "
+                    f"indoor={indoor_temp}°C < {heat_threshold}°C — resuming regardless of price"
+                )
         else:
             indoor_good = True   # not configured → don't block
             indoor_bad  = False
+
+        #   RESUME: too cold override (ignores price, still respects outside temp)
+        if too_cold and outside_good:
+            return True
 
         #   RESUME: all conditions clearly favourable
         if outside_good and price_good and indoor_good:
