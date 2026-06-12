@@ -735,12 +735,20 @@ function renderWeather(d) {
 }
 
 // ── Price chart ──────────────────────────────────────────────────────────────
-function drawPriceChart(schedule, avgOre, currentTime) {
+// Price chart state — kept outside the function so mousemove can access it
+let _priceSchedule = [], _priceAvg = null, _priceCurrentTime = null;
+
+function drawPriceChart(schedule, avgOre, currentTime, hoverIdx = -1) {
   const canvas = document.getElementById('price-chart');
   if (!schedule?.length) return;
   canvas.style.display = 'block';
 
-  const LABEL_H = 14;   // pixels reserved for hour labels at bottom
+  // Store for hover redraws
+  _priceSchedule    = schedule;
+  _priceAvg         = avgOre;
+  _priceCurrentTime = currentTime;
+
+  const LABEL_H = 14;
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.offsetWidth;
   const H = canvas.offsetHeight || 100;
@@ -762,9 +770,12 @@ function drawPriceChart(schedule, avgOre, currentTime) {
     const y = toY(slot.ore);
     const h = BAR_H - y;
     const isCurrent = slot.time === currentTime;
+    const isHovered = i === hoverIdx;
     const ratio = maxV > minV ? (slot.ore - minV) / (maxV - minV) : 0.5;
 
-    ctx.fillStyle = isCurrent
+    ctx.fillStyle = isHovered
+      ? 'rgba(255,255,255,1)'
+      : isCurrent
       ? 'rgba(255,255,255,0.95)'
       : ratio < 0.33 ? 'rgba(47,214,160,0.75)'
       : ratio > 0.66 ? 'rgba(255,91,91,0.75)'
@@ -785,6 +796,26 @@ function drawPriceChart(schedule, avgOre, currentTime) {
     ctx.setLineDash([]);
   }
 
+  // Hover tooltip
+  if (hoverIdx >= 0 && hoverIdx < schedule.length) {
+    const slot  = schedule[hoverIdx];
+    const x     = hoverIdx * barW;
+    const y     = toY(slot.ore);
+    const label = `${slot.time}  ${slot.ore.toFixed(1)} öre`;
+    const PAD   = 5;
+    ctx.font = '10px DM Mono, monospace';
+    const tw = ctx.measureText(label).width;
+    const bx = Math.min(Math.max(x + barW / 2 - tw / 2 - PAD, 0), W - tw - PAD * 2);
+    const by = Math.max(y - 28, 2);
+    ctx.fillStyle = 'rgba(25,29,40,0.92)';
+    ctx.beginPath();
+    ctx.roundRect(bx, by, tw + PAD * 2, 18, 4);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.textAlign = 'left';
+    ctx.fillText(label, bx + PAD, by + 12);
+  }
+
   // Hour labels on full-hour slots
   ctx.fillStyle = 'rgba(255,255,255,0.35)';
   ctx.font = `9px DM Mono, monospace`;
@@ -797,6 +828,27 @@ function drawPriceChart(schedule, avgOre, currentTime) {
     }
   });
 }
+
+// Wire up hover on price chart (once, at boot)
+(function() {
+  const canvas = document.getElementById('price-chart');
+  let lastIdx = -1;
+  canvas.addEventListener('mousemove', e => {
+    if (!_priceSchedule.length) return;
+    const rect = canvas.getBoundingClientRect();
+    const x    = e.clientX - rect.left;
+    const barW = rect.width / _priceSchedule.length;
+    const idx  = Math.floor(x / barW);
+    if (idx !== lastIdx) {
+      lastIdx = idx;
+      drawPriceChart(_priceSchedule, _priceAvg, _priceCurrentTime, idx);
+    }
+  });
+  canvas.addEventListener('mouseleave', () => {
+    lastIdx = -1;
+    drawPriceChart(_priceSchedule, _priceAvg, _priceCurrentTime, -1);
+  });
+})();
 
 // ── Render electricity price ──────────────────────────────────────────────────
 function renderPrice(d) {
