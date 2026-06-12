@@ -95,8 +95,9 @@ class ShellyHT(BaseDevice):
         def on_connect(client, userdata, flags, rc):
             if rc == 0:
                 log.info(f"[{self.room_name}] MQTT connected to {self.broker_host}:{self.broker_port}")
-                client.subscribe(f"shellies/{self.device_id}/events/rpc")
-                client.subscribe(f"shellies/{self.device_id}/online")
+                # Gen3 topic format: <device-id>/events/rpc (no "shellies/" prefix)
+                client.subscribe(f"{self.device_id}/events/rpc")
+                client.subscribe(f"{self.device_id}/online")
             else:
                 log.error(f"[{self.room_name}] MQTT connection failed rc={rc}")
 
@@ -107,6 +108,10 @@ class ShellyHT(BaseDevice):
                     return
                 if msg.topic.endswith("/events/rpc"):
                     data   = json.loads(payload)
+                    method = data.get("method", "")
+                    # Handle both NotifyFullStatus and NotifyStatus
+                    if method not in ("NotifyFullStatus", "NotifyStatus"):
+                        return
                     params = data.get("params", {})
 
                     temp = params.get("temperature:0", {})
@@ -123,13 +128,15 @@ class ShellyHT(BaseDevice):
                     if "V" in batt:
                         self._battery_v = batt["V"]
 
-                    self._last_seen = datetime.now(timezone.utc)
-                    log.info(
-                        f"[{self.room_name}] "
-                        f"{self._temperature}°C  "
-                        f"{self._humidity}% RH  "
-                        f"battery={self._battery_pct}%"
-                    )
+                    # Only update last_seen if we got actual sensor data
+                    if self._temperature is not None:
+                        self._last_seen = datetime.now(timezone.utc)
+                        log.info(
+                            f"[{self.room_name}] "
+                            f"{self._temperature}°C  "
+                            f"{self._humidity}% RH  "
+                            f"battery={self._battery_pct}%"
+                        )
             except Exception as e:
                 log.warning(f"[{self.room_name}] MQTT parse error: {e}")
 
