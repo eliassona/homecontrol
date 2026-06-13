@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="refresh" content="30">
+<title>HomeControl</title>
+<style>
+body {
+  background: #0d0f14;
+  color: #e8eaf0;
+  font-family: Georgia, serif;
+  margin: 0;
+  padding: 12px;
+}
+h1 {
+  font-size: 20px;
+  font-weight: bold;
+  margin: 0 0 4px 0;
+  color: #f0a500;
+}
+.updated {
+  font-size: 11px;
+  color: #6b7080;
+  margin-bottom: 16px;
+}
+.section {
+  margin-bottom: 20px;
+}
+.section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #6b7080;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #1e2230;
+  padding-bottom: 4px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+td {
+  padding: 6px 4px;
+  border-bottom: 1px solid #191d28;
+  vertical-align: top;
+}
+td:first-child {
+  color: #6b7080;
+  width: 50%;
+}
+td:last-child {
+  font-family: Courier, monospace;
+  text-align: right;
+}
+.big {
+  font-size: 22px;
+  font-family: Courier, monospace;
+  color: #e8eaf0;
+}
+.good  { color: #2fd6a0; }
+.warn  { color: #f0a500; }
+.bad   { color: #ff5b5b; }
+.muted { color: #6b7080; }
+.card {
+  background: #13161e;
+  border: 1px solid #1e2230;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.card-title {
+  font-size: 11px;
+  color: #6b7080;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+.inline { display: inline; }
+.error { color: #ff5b5b; font-size: 12px; font-style: italic; }
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-family: Courier, monospace;
+}
+.badge-on  { background: #0f2e26; color: #2fd6a0; }
+.badge-off { background: #2e1414; color: #ff5b5b; }
+.badge-mid { background: #2a2206; color: #f0a500; }
+.sensor-row {
+  display: table;
+  width: 100%;
+}
+.open { color: #ff5b5b; font-weight: bold; }
+.close { color: #6b7080; }
+</style>
+</head>
+<body>
+<h1>HomeControl</h1>
+<div class="updated" id="updated">Loading...</div>
+
+<div id="content">
+  <div class="muted">Fetching data...</div>
+</div>
+
+<script>
+var API = '';
+
+function fmt(n, dec) {
+  if (n === null || n === undefined) return '—';
+  return Number(n).toFixed(dec !== undefined ? dec : 1);
+}
+
+function fmtUptime(s) {
+  if (!s) return '—';
+  var d = Math.floor(s / 86400);
+  var h = Math.floor((s % 86400) / 3600);
+  var m = Math.floor((s % 3600) / 60);
+  if (d) return d + 'd ' + h + 'h';
+  if (h) return h + 'h ' + m + 'm';
+  return m + 'm';
+}
+
+function fmtTime(iso) {
+  if (!iso) return '—';
+  var d = new Date(iso);
+  return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+}
+
+function badge(text, cls) {
+  return '<span class="badge ' + cls + '">' + text + '</span>';
+}
+
+function tempColor(t) {
+  if (t === null || t === undefined) return '';
+  if (t < 0) return 'good';
+  if (t > 25) return 'bad';
+  return '';
+}
+
+function priceColor(ore, avg) {
+  if (!ore || !avg) return '';
+  var ratio = (ore - avg) / avg;
+  if (ratio < -0.2) return 'good';
+  if (ratio > 0.2) return 'bad';
+  return 'warn';
+}
+
+function section(title, html) {
+  return '<div class="section"><div class="section-title">' + title + '</div>' + html + '</div>';
+}
+
+function table(rows) {
+  var html = '<table>';
+  for (var i = 0; i < rows.length; i++) {
+    html += '<tr><td>' + rows[i][0] + '</td><td>' + rows[i][1] + '</td></tr>';
+  }
+  html += '</table>';
+  return html;
+}
+
+function renderAll(data) {
+  var d = data.devices || {};
+  var html = '';
+
+  // ── Outside weather ──
+  if (d.outside_weather && d.outside_weather.online) {
+    var w = d.outside_weather;
+    var tc = w.temperature_c;
+    var col = tc < 0 ? 'good' : tc > 25 ? 'bad' : '';
+    html += section('Outside &middot; ' + (w.location_name || ''),
+      table([
+        ['Temperature', '<span class="' + col + '">' + fmt(tc) + ' &deg;C</span>'],
+        ['Feels like',  fmt(w.feels_like_c) + ' &deg;C'],
+        ['Humidity',    fmt(w.humidity_pct, 0) + '%'],
+        ['Wind',        fmt(w.wind_speed_ms) + ' m/s ' + (w.wind_direction_str || '')],
+        ['Conditions',  w.weather_desc || '—'],
+        ['Updated',     fmtTime(w.observed_at)]
+      ])
+    );
+  }
+
+  // ── Electricity price ──
+  if (d.electricity_price && d.electricity_price.online) {
+    var p = d.electricity_price;
+    var pc = priceColor(p.price_now_ore, p.today_avg_ore);
+    html += section('Electricity &middot; ' + (p.price_area || 'SE3'),
+      table([
+        ['Now',      '<span class="' + pc + '">' + fmt(p.price_now_ore, 0) + ' &ouml;re/kWh</span>'],
+        ['Period',   fmtTime(p.period_start) + '&ndash;' + fmtTime(p.period_end)],
+        ['Day avg',  fmt(p.today_avg_ore, 0) + ' &ouml;re'],
+        ['Day min',  '<span class="good">' + fmt(p.today_min_ore, 0) + ' &ouml;re</span>'],
+        ['Day max',  '<span class="bad">'  + fmt(p.today_max_ore, 0) + ' &ouml;re</span>']
+      ])
+    );
+  }
+
+  // ── Power meter ──
+  if (d.smart_meter && d.smart_meter.online) {
+    var m = d.smart_meter;
+    var netW = m.net_power_w || 0;
+    var netCol = netW < 0 ? 'good' : '';
+    html += section('Power',
+      table([
+        ['Total',    '<span class="' + netCol + '">' + Math.abs(netW) + ' W' + (netW < 0 ? ' &larr; grid' : '') + '</span>'],
+        ['L1 / L2 / L3', (m.power_l1_w || 0) + ' / ' + (m.power_l2_w || 0) + ' / ' + (m.power_l3_w || 0) + ' W'],
+        ['Voltage',  fmt(m.voltage_l1_v) + ' V'],
+        ['This hour', fmt(m.energy_this_hour_kwh, 3) + ' kWh'],
+        ['T1 total',  fmt(m.energy_delivered_t1_kwh, 0) + ' kWh'],
+        ['WiFi',      (m.wifi_rssi_dbm || '—') + ' dBm']
+      ])
+    );
+  }
+
+  // ── Room sensors ──
+  var roomHtml = '';
+  var keys = Object.keys(d);
+  for (var i = 0; i < keys.length; i++) {
+    var dev = d[keys[i]];
+    if (dev && dev.device_type === 'room_sensor' && dev.room) {
+      var stale = dev.stale ? ' <span class="muted">(stale)</span>' : '';
+      var tc2 = dev.temperature;
+      var tcol = tc2 !== null && tc2 !== undefined ? (tc2 < 18 ? 'good' : tc2 > 25 ? 'bad' : '') : '';
+      roomHtml += '<div class="card">';
+      roomHtml += '<div class="card-title">' + (dev.room || dev.room_name || keys[i]) + stale + '</div>';
+      roomHtml += '<span class="big ' + tcol + '">' + fmt(tc2) + '</span> &deg;C';
+      if (dev.humidity !== null && dev.humidity !== undefined) {
+        roomHtml += ' &nbsp; <span class="muted">' + fmt(dev.humidity, 0) + '% RH</span>';
+      }
+      if (dev.battery_pct !== null && dev.battery_pct !== undefined) {
+        var bcol = dev.battery_pct > 50 ? 'good' : dev.battery_pct > 20 ? 'warn' : 'bad';
+        roomHtml += '<br><span class="' + bcol + ' muted" style="font-size:11px">battery ' + dev.battery_pct + '%</span>';
+      }
+      roomHtml += '</div>';
+    }
+  }
+  if (roomHtml) html += section('Room sensors', roomHtml);
+
+  // ── Miner ──
+  if (d.s9_miner && d.s9_miner.online) {
+    var mn = d.s9_miner;
+    var mining = mn.mining_active;
+    html += section('Miner',
+      table([
+        ['Status',    mining ? badge('MINING', 'badge-on') : badge('PAUSED', 'badge-off')],
+        ['Hashrate',  fmt(mn.hashrate_5s_gh) + ' GH/s (5s)'],
+        ['Avg',       fmt(mn.hashrate_avg_gh) + ' GH/s'],
+        ['Accepted',  (mn.accepted_shares || 0).toLocaleString()],
+        ['Rejected',  (mn.rejected_shares || 0).toLocaleString()],
+        ['Uptime',    fmtUptime(mn.uptime_seconds)],
+        ['Pool',      (mn.pool_status || '—')]
+      ])
+    );
+  }
+
+  // ── Verisure ──
+  if (d.verisure && d.verisure.online) {
+    var v = d.verisure;
+    var armCol = v.alarm_state === 'DISARMED' ? 'good' : 'warn';
+    var armLabel = {ARMED_AWAY: 'Armed away', ARMED_HOME: 'Armed home', DISARMED: 'Disarmed'}[v.alarm_state] || v.alarm_state;
+    var vHtml = table([
+      ['Alarm', '<span class="' + armCol + '">' + armLabel + '</span>'],
+      ['Changed by', v.alarm_changed_by || '—'],
+      ['Open sensors', v.open_doors > 0 ? '<span class="bad">' + v.open_doors + ' open</span>' : '<span class="good">All closed</span>']
+    ]);
+
+    // Climate
+    if (v.climate && v.climate.length) {
+      vHtml += '<br><div class="card-title">Climate sensors</div>';
+      var crows = [];
+      for (var ci = 0; ci < v.climate.length; ci++) {
+        var c = v.climate[ci];
+        var ctc = c.temperature;
+        var ccol = ctc < 18 ? 'good' : ctc > 25 ? 'bad' : '';
+        var hstr = c.humidity !== null && c.humidity !== undefined ? ' / ' + fmt(c.humidity, 0) + '%' : '';
+        crows.push([c.name, '<span class="' + ccol + '">' + fmt(ctc) + '&deg;C' + hstr + '</span>']);
+      }
+      vHtml += table(crows);
+    }
+
+    // Door/window sensors — only show open ones to save space
+    var openDoors = [];
+    if (v.door_window) {
+      for (var di = 0; di < v.door_window.length; di++) {
+        if (v.door_window[di].state === 'OPEN') openDoors.push(v.door_window[di]);
+      }
+    }
+    if (openDoors.length) {
+      vHtml += '<br><div class="card-title">Open sensors</div>';
+      var drows = [];
+      for (var oi = 0; oi < openDoors.length; oi++) {
+        drows.push([openDoors[oi].name, '<span class="open">OPEN</span>']);
+      }
+      vHtml += table(drows);
+    }
+
+    html += section('Verisure', vHtml);
+  }
+
+  document.getElementById('content').innerHTML = html || '<div class="muted">No data</div>';
+}
+
+function load() {
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', API + '/api/status', true);
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState === 4) {
+      if (xhr.status === 200) {
+        try {
+          var data = JSON.parse(xhr.responseText);
+          var now = new Date();
+          document.getElementById('updated').innerHTML =
+            'Updated ' + now.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) +
+            ' &nbsp;&middot;&nbsp; <a href="/" style="color:#6b7080">Full UI</a>';
+          renderAll(data);
+        } catch(e) {
+          document.getElementById('content').innerHTML = '<div class="error">Parse error: ' + e + '</div>';
+        }
+      } else {
+        document.getElementById('content').innerHTML = '<div class="error">Error ' + xhr.status + '</div>';
+      }
+    }
+  };
+  xhr.send();
+}
+
+load();
+</script>
+</body>
+</html>
