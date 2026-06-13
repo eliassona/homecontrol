@@ -214,6 +214,8 @@
           T2: <span id="power-t2">—</span> kWh
           &nbsp;·&nbsp;
           Returned: <span id="power-ret">—</span> kWh
+          &nbsp;·&nbsp;
+          WiFi: <span id="power-rssi">—</span>
         </div>
       </div>
     </div>
@@ -694,6 +696,21 @@ function renderPower(d) {
   setText('power-t2',   (d.energy_delivered_t2_kwh ?? 0).toFixed(1));
   const ret = (d.energy_returned_t1_kwh ?? 0) + (d.energy_returned_t2_kwh ?? 0);
   setText('power-ret',  ret.toFixed(1));
+
+  // WiFi signal strength
+  const rssi = d.wifi_rssi_dbm;
+  if (rssi != null) {
+    const rssiCol = rssi >= -60 ? 'var(--accent2)'
+                  : rssi >= -70 ? 'var(--accent)'
+                  : rssi >= -80 ? 'var(--text)'
+                  : 'var(--danger)';
+    const rssiLabel = rssi >= -60 ? 'excellent'
+                    : rssi >= -70 ? 'good'
+                    : rssi >= -80 ? 'fair'
+                    : 'weak';
+    el('power-rssi').textContent = `${rssi} dBm (${rssiLabel})`;
+    el('power-rssi').style.color = rssiCol;
+  }
 }
 
 // ── Render outside weather ──────────────────────────────────────────────────────
