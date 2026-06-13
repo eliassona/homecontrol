@@ -193,8 +193,10 @@ function renderAll(data) {
         ['Day avg',  fmt(p.today_avg_ore, 0) + ' &ouml;re'],
         ['Day min',  '<span class="good">' + fmt(p.today_min_ore, 0) + ' &ouml;re</span>'],
         ['Day max',  '<span class="bad">'  + fmt(p.today_max_ore, 0) + ' &ouml;re</span>']
-      ])
+      ]) +
+      '<canvas id="price-canvas" width="600" height="80" style="width:100%;margin-top:10px;display:block"></canvas>'
     );
+    window._priceData = p;
   }
 
   // ── Power meter ──
@@ -300,6 +302,88 @@ function renderAll(data) {
   }
 
   document.getElementById('content').innerHTML = html || '<div class="muted">No data</div>';
+
+  // Draw price chart after DOM update
+  if (window._priceData) {
+    drawPriceChart(window._priceData);
+  }
+}
+
+function drawPriceChart(p) {
+  var canvas = document.getElementById('price-canvas');
+  if (!canvas || !p.schedule_hourly || !p.schedule_hourly.length) return;
+
+  var schedule = p.schedule_hourly;
+  var avgOre   = p.today_avg_ore;
+  var nowTime  = '';
+  if (p.period_start) {
+    var d = new Date(p.period_start);
+    var hh = d.getHours();
+    var mm = d.getMinutes();
+    nowTime = (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
+  }
+
+  var ctx  = canvas.getContext('2d');
+  var W    = canvas.width;
+  var H    = canvas.height;
+  var LBLH = 12;
+  var BARH = H - LBLH;
+
+  ctx.clearRect(0, 0, W, H);
+
+  var values = [];
+  for (var i = 0; i < schedule.length; i++) values.push(schedule[i].ore);
+  var minV = 0;
+  var maxV = 0;
+  for (var i = 0; i < values.length; i++) {
+    if (values[i] > maxV) maxV = values[i];
+  }
+  maxV = maxV * 1.08 || 1;
+
+  var barW = W / schedule.length;
+
+  for (var i = 0; i < schedule.length; i++) {
+    var slot    = schedule[i];
+    var x       = i * barW;
+    var ratio   = (slot.ore - minV) / (maxV - minV);
+    var barH    = BARH * ratio;
+    var y       = BARH - barH;
+    var current = slot.time === nowTime;
+
+    if (current) {
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    } else if (ratio < 0.33) {
+      ctx.fillStyle = 'rgba(47,214,160,0.75)';
+    } else if (ratio > 0.66) {
+      ctx.fillStyle = 'rgba(255,91,91,0.75)';
+    } else {
+      ctx.fillStyle = 'rgba(240,165,0,0.75)';
+    }
+    ctx.fillRect(x + 0.5, y, Math.max(barW - 1, 1), barH);
+  }
+
+  // Avg line
+  if (avgOre) {
+    var avgRatio = (avgOre - minV) / (maxV - minV);
+    var avgY     = BARH - BARH * avgRatio;
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth   = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, avgY);
+    ctx.lineTo(W, avgY);
+    ctx.stroke();
+  }
+
+  // Hour labels
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.font      = '9px Courier, monospace';
+  ctx.textAlign = 'center';
+  for (var i = 0; i < schedule.length; i++) {
+    if (schedule[i].full_hour) {
+      var hour = schedule[i].time.replace(':00', '');
+      ctx.fillText(hour, i * barW + barW / 2, H - 1);
+    }
+  }
 }
 
 function load() {
