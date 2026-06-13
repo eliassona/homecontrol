@@ -194,7 +194,7 @@ function renderAll(data) {
         ['Day min',  '<span class="good">' + fmt(p.today_min_ore, 0) + ' &ouml;re</span>'],
         ['Day max',  '<span class="bad">'  + fmt(p.today_max_ore, 0) + ' &ouml;re</span>']
       ]) +
-      '<canvas id="price-canvas" width="600" height="80" style="width:100%;margin-top:10px;display:block"></canvas>'
+      '<canvas id="price-canvas" width="600" height="80" style="width:100%;height:80px;margin-top:10px;display:block;background:#13161e"></canvas>'
     );
     window._priceData = p;
   }
@@ -303,9 +303,9 @@ function renderAll(data) {
 
   document.getElementById('content').innerHTML = html || '<div class="muted">No data</div>';
 
-  // Draw price chart after DOM update
+  // Draw price chart after DOM update — use setTimeout to ensure canvas is in DOM
   if (window._priceData) {
-    drawPriceChart(window._priceData);
+    setTimeout(function() { drawPriceChart(window._priceData); }, 50);
   }
 }
 
