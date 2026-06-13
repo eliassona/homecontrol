@@ -57,6 +57,9 @@ class BaseRule:
             await asyncio.sleep(self.interval_seconds)
 
     async def _tick(self):
+        if getattr(self, 'manual', False):
+            log.debug(f"[{self.name}] Manual mode — skipping evaluation")
+            return
         decision = await self.evaluate()
         if decision is None:
             log.info(f"[{self.name}] Dead zone — leaving state unchanged")
@@ -272,6 +275,7 @@ class Automator:
 
     def __init__(self, registry, rules_cfg: List[dict]):
         self._rules: List[BaseRule] = []
+        self._manual = False
         for rule_cfg in rules_cfg:
             rule_type = rule_cfg.get("type")
             cls = RULE_CLASSES.get(rule_type)
@@ -281,6 +285,12 @@ class Automator:
             rule = cls(registry, rule_cfg)
             self._rules.append(rule)
             log.info(f"Loaded rule: {rule.name} (interval={rule.interval_seconds}s)")
+
+    def set_manual(self, manual: bool):
+        self._manual = manual
+        for rule in self._rules:
+            rule.manual = manual
+        log.info(f"Automation mode: {'MANUAL' if manual else 'AUTO'}")
 
     async def start(self):
         for rule in self._rules:

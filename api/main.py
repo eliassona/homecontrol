@@ -132,10 +132,25 @@ async def send_command(device_id: str, payload: dict):
     result = await device.command(payload.get("command"), payload.get("params", {}))
     return {"ok": True, "result": result}
 
+# Manual mode state (in-memory, resets on restart)
+_manual_mode: bool = False
+
 @app.get("/api/automation")
 async def get_automation():
     """Return automation rule config (for dashboard display)."""
     return cfg.get("automation", {})
+
+@app.get("/api/automation/mode")
+async def get_mode():
+    return {"manual": _manual_mode}
+
+@app.post("/api/automation/mode")
+async def set_mode(payload: dict):
+    global _manual_mode
+    _manual_mode = bool(payload.get("manual", False))
+    if automator:
+        automator.set_manual(_manual_mode)
+    return {"manual": _manual_mode}
 
 @app.get("/api/config")
 async def get_config():

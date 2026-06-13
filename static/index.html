@@ -134,6 +134,23 @@
   @keyframes spin { to { transform: rotate(360deg); } }
   .spin { display: inline-block; animation: spin .6s linear infinite; }
 
+  /* ── Toggle switch ── */
+  .toggle-wrap { display:flex; align-items:center; gap:8px; }
+  .toggle-label { font-size:11px; color:var(--muted); font-family:var(--mono); }
+  .toggle { position:relative; width:36px; height:20px; cursor:pointer; }
+  .toggle input { opacity:0; width:0; height:0; position:absolute; }
+  .toggle-slider {
+    position:absolute; inset:0; border-radius:20px;
+    background:rgba(255,255,255,0.1); border:1px solid var(--border2);
+    transition:background .2s;
+  }
+  .toggle-slider::before {
+    content:''; position:absolute; width:14px; height:14px; border-radius:50%;
+    background:var(--muted); top:2px; left:2px; transition:.2s;
+  }
+  .toggle input:checked + .toggle-slider { background:rgba(47,214,160,0.3); border-color:var(--accent2); }
+  .toggle input:checked + .toggle-slider::before { background:var(--accent2); transform:translateX(16px); }
+
   /* ── Automation rule card ── */
   .rule-card {
     background: var(--panel); border: 1px solid var(--border);
@@ -348,15 +365,38 @@
     <div>
       <div class="section-label">Automation</div>
       <div id="automation-rules" style="display:flex; flex-direction:column; gap:10px">
-        <div class="rule-card" id="rule-miner-temp-price" style="cursor:pointer" title="Click to see control logic">
+        <div class="rule-card" id="rule-miner-temp-price">
           <div style="flex:1">
-            <div class="rule-name">Miner — temp &amp; price</div>
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+              <div class="rule-name">Miner — temp &amp; price</div>
+              <!-- Auto/Manual toggle -->
+              <div class="toggle-wrap">
+                <span class="toggle-label" id="mode-label">AUTO</span>
+                <label class="toggle" title="Switch between auto and manual control">
+                  <input type="checkbox" id="manual-toggle">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-label">MANUAL</span>
+              </div>
+            </div>
             <div class="rule-reason" id="rule-reason">Waiting for first evaluation…</div>
             <div class="rule-values" id="rule-values"></div>
+            <!-- Manual controls (hidden in auto mode) -->
+            <div id="manual-controls" style="display:none;margin-top:10px;display:none">
+              <div class="toggle-wrap">
+                <span class="toggle-label">PAUSE</span>
+                <label class="toggle" title="Pause or resume miner">
+                  <input type="checkbox" id="miner-toggle">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span class="toggle-label">RESUME</span>
+                <span id="miner-manual-status" style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:8px"></span>
+              </div>
+            </div>
           </div>
           <div style="display:flex;align-items:center;gap:10px">
             <div class="rule-state hold" id="rule-state">—</div>
-            <div style="color:var(--muted);font-size:14px">⋯</div>
+            <div id="logic-btn" style="color:var(--muted);font-size:14px;cursor:pointer" title="Show control logic">⋯</div>
           </div>
         </div>
       </div>
@@ -1043,8 +1083,12 @@ async function poll() {
     // Future: if (devices.power_meter) renderPower(devices.power_meter);
 
     // Automation rule status — derived from live device data, not a separate API call
-    if (devices.outside_weather && devices.electricity_price) {
+    if (!isManual && devices.outside_weather && devices.electricity_price) {
       renderMinerRule(devices.outside_weather, devices.electricity_price, devices.s9_miner, devices.verisure);
+    }
+    // In manual mode keep miner toggle in sync with actual mining state
+    if (isManual && devices.s9_miner) {
+      el('miner-toggle').checked = !!devices.s9_miner.mining_active;
     }
 
   } catch (e) {
@@ -1233,8 +1277,8 @@ function showLogicModal() {
   setInterval(poll, POLL_MS);
 })();
 
-// Automation card click → show logic diagram
-el('rule-miner-temp-price').addEventListener('click', showLogicModal);
+// Logic diagram button (⋯)
+el('logic-btn').addEventListener('click', showLogicModal);
 
 // Modal close
 el('logic-close').addEventListener('click', () => {
@@ -1245,6 +1289,47 @@ el('logic-modal').addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') el('logic-modal').style.display = 'none';
+});
+
+// ── Auto / Manual toggle ──────────────────────────────────────────────────────
+let isManual = false;
+
+el('manual-toggle').addEventListener('change', async () => {
+  isManual = el('manual-toggle').checked;
+  el('manual-controls').style.display = isManual ? 'block' : 'none';
+  el('rule-state').style.opacity      = isManual ? '0.4' : '1';
+  el('rule-reason').style.opacity     = isManual ? '0.4' : '1';
+  if (isManual) {
+    setText('miner-manual-status', '');
+    const snap = window._lastDevices?.s9_miner;
+    if (snap) el('miner-toggle').checked = !!snap.mining_active;
+  }
+  // Notify server
+  await fetch(`${API}/api/automation/mode`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({manual: isManual})
+  });
+});
+
+// ── Miner pause/resume toggle ─────────────────────────────────────────────────
+el('miner-toggle').addEventListener('change', async () => {
+  const shouldRun = el('miner-toggle').checked;
+  const cmd = shouldRun ? 'resume' : 'pause';
+  setText('miner-manual-status', '…');
+  try {
+    const res = await fetch(`${API}/api/devices/s9_miner/command`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({command: cmd})
+    });
+    const data = await res.json();
+    setText('miner-manual-status', data.ok ? (shouldRun ? 'resumed' : 'paused') : 'error');
+    setTimeout(() => setText('miner-manual-status', ''), 3000);
+  } catch (e) {
+    setText('miner-manual-status', 'error');
+    console.error(e);
+  }
 });
 
 window.addEventListener('resize', drawSparkline);
