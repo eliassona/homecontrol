@@ -382,7 +382,7 @@
             <div class="rule-reason" id="rule-reason">Waiting for first evaluation…</div>
             <div class="rule-values" id="rule-values"></div>
             <!-- Manual controls (hidden in auto mode) -->
-            <div id="manual-controls" style="display:none;margin-top:10px;display:none">
+            <div id="manual-controls" style="display:none;margin-top:10px">
               <div class="toggle-wrap">
                 <span class="toggle-label">PAUSE</span>
                 <label class="toggle" title="Pause or resume miner">
@@ -396,7 +396,7 @@
           </div>
           <div style="display:flex;align-items:center;gap:10px">
             <div class="rule-state hold" id="rule-state">—</div>
-            <div id="logic-btn" style="color:var(--muted);font-size:14px;cursor:pointer" title="Show control logic">⋯</div>
+            <div id="logic-btn" style="color:var(--muted);font-size:11px;cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:6px;white-space:nowrap" title="Show control logic">logic ⋯</div>
           </div>
         </div>
       </div>
@@ -409,7 +409,7 @@
           <span style="font-size:14px;font-weight:600">Control logic</span>
           <button id="logic-close" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:0 4px">✕</button>
         </div>
-        <svg id="logic-svg" viewBox="0 0 620 680" width="100%" style="overflow:visible"></svg>
+        <svg id="logic-svg" viewBox="0 0 620 680" width="100%" height="680" preserveAspectRatio="xMidYMid meet" style="display:block;overflow:visible"></svg>
       </div>
     </div>
 
@@ -1112,6 +1112,7 @@ function buildLogicDiagram() {
   const svgH = hasIndoor ? 680 : 560;
   const svg = el('logic-svg');
   svg.setAttribute('viewBox', `0 0 620 ${svgH}`);
+  svg.setAttribute('height', svgH);
 
   const NS = 'http://www.w3.org/2000/svg';
   function mk(tag, attrs, text) {
