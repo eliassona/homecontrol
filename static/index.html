@@ -1103,8 +1103,8 @@ function renderMinerRule(weather, price, miner, verisure) {
   }
 
   const stateEl = el('rule-state');
-  stateEl.textContent = label;
-  stateEl.className = `rule-state ${state}`;
+  stateEl.textContent = isManual ? 'MANUAL' : label;
+  stateEl.className = `rule-state ${isManual ? 'hold' : state}`;
   setText('rule-reason', reason);
 
   const vals = [
@@ -1139,7 +1139,8 @@ async function poll() {
     // Future: if (devices.power_meter) renderPower(devices.power_meter);
 
     // Automation rule status — derived from live device data, not a separate API call
-    if (!isManual && devices.outside_weather && devices.electricity_price) {
+    // Always render rule status (for display), automator ignores it in manual mode
+    if (devices.outside_weather && devices.electricity_price) {
       renderMinerRule(devices.outside_weather, devices.electricity_price, devices.s9_miner, devices.verisure);
     }
     // In manual mode keep miner toggle in sync with actual mining state
@@ -1340,6 +1341,11 @@ if (isManual) {
   el('manual-controls').style.display = 'block';
   el('rule-state').style.opacity = '0.4';
   el('rule-reason').style.opacity = '0.4';
+  // Show manual state indicator instead of "Waiting for first evaluation…"
+  setText('rule-reason', 'Manual mode — automator paused');
+  const stateEl = el('rule-state');
+  stateEl.textContent = 'MANUAL';
+  stateEl.className = 'rule-state hold';
 }
 
 // Logic diagram button (⋯)
@@ -1366,6 +1372,10 @@ el('manual-toggle').addEventListener('change', async () => {
   el('rule-reason').style.opacity     = isManual ? '0.4' : '1';
   if (isManual) {
     setText('miner-manual-status', '');
+    setText('rule-reason', 'Manual mode — automator paused');
+    const stateEl = el('rule-state');
+    stateEl.textContent = 'MANUAL';
+    stateEl.className = 'rule-state hold';
     const snap = window._lastDevices?.s9_miner;
     if (snap) el('miner-toggle').checked = !!snap.mining_active;
   }
