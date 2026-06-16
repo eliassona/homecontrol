@@ -1331,22 +1331,22 @@ function showLogicModal() {
 // ── Boot ──────────────────────────────────────────────────────────────────
 (async () => {
   await loadConfig();
+
+  // Apply manual mode AFTER loadConfig has set isManual from server
+  if (isManual) {
+    el('manual-toggle').checked = true;
+    el('manual-controls').style.display = 'block';
+    el('rule-state').style.opacity = '0.4';
+    el('rule-reason').style.opacity = '0.4';
+    setText('rule-reason', 'Manual mode — automator paused');
+    const stateEl = el('rule-state');
+    stateEl.textContent = 'MANUAL';
+    stateEl.className = 'rule-state hold';
+  }
+
   await poll();
   setInterval(poll, POLL_MS);
 })();
-
-// Apply manual mode loaded from server
-if (isManual) {
-  el('manual-toggle').checked = true;
-  el('manual-controls').style.display = 'block';
-  el('rule-state').style.opacity = '0.4';
-  el('rule-reason').style.opacity = '0.4';
-  // Show manual state indicator instead of "Waiting for first evaluation…"
-  setText('rule-reason', 'Manual mode — automator paused');
-  const stateEl = el('rule-state');
-  stateEl.textContent = 'MANUAL';
-  stateEl.className = 'rule-state hold';
-}
 
 // Logic diagram button (⋯)
 el('logic-btn').addEventListener('click', showLogicModal);
