@@ -451,6 +451,12 @@
           <div class="section-label" style="margin-bottom:8px">Doors &amp; Windows</div>
           <div id="verisure-dw-rows" style="display:flex; flex-wrap:wrap; gap:8px"></div>
         </div>
+
+        <!-- Smart plugs -->
+        <div id="verisure-plug-list" style="display:none; margin-top:14px">
+          <div class="section-label" style="margin-bottom:8px">Smart plugs</div>
+          <div id="verisure-plug-rows" style="display:flex; flex-wrap:wrap; gap:10px"></div>
+        </div>
       </div>
     </div>
 
@@ -517,11 +523,19 @@ async function loadConfig() {
     if (secs) POLL_MS = secs * 1000;
     const title = cfg?.dashboard?.title;
     if (title) document.title = title;
-    // Store the first automation rule config for the dashboard display
     const rules = cfg?.automation?.rules || [];
     if (rules.length) RULE_CFG = rules[0];
   } catch (e) {
     console.warn('Could not load server config, using defaults');
+  }
+
+  // Load persisted manual mode from server
+  try {
+    const res = await fetch(`${API}/api/automation/mode`);
+    const data = await res.json();
+    isManual = !!data.manual;
+  } catch (e) {
+    console.warn('Could not load automation mode');
   }
 }
 
@@ -627,6 +641,48 @@ function renderVerisure(d) {
     }).join('');
   } else {
     dwList.style.display = 'none';
+  }
+
+  // Smart plugs
+  const plugList = el('verisure-plug-list');
+  const plugRows = el('verisure-plug-rows');
+  if (d.smartplugs?.length) {
+    plugList.style.display = '';
+    plugRows.innerHTML = d.smartplugs.map((p, i) => {
+      const isOn = p.state === 'ON';
+      return `<div style="display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 14px">
+        <span style="font-size:12px">${p.name}</span>
+        <label class="toggle" title="Turn ${p.name} on/off">
+          <input type="checkbox" ${isOn ? 'checked' : ''} onchange="togglePlug('${p.label}', this.checked, this)">
+          <span class="toggle-slider"></span>
+        </label>
+        <span style="font-family:var(--mono);font-size:10px;color:${isOn ? 'var(--accent2)' : 'var(--muted)'}">${p.state}</span>
+      </div>`;
+    }).join('');
+  } else {
+    plugList.style.display = 'none';
+  }
+}
+
+// Toggle a Verisure smart plug on/off
+async function togglePlug(deviceLabel, turnOn, checkboxEl) {
+  checkboxEl.disabled = true;
+  try {
+    const res = await fetch(`${API}/api/devices/verisure/command`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({command: 'set_smartplug', params: {device_label: deviceLabel, state: turnOn}})
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      checkboxEl.checked = !turnOn;  // revert on failure
+      console.error('Failed to set smartplug:', data);
+    }
+  } catch (e) {
+    checkboxEl.checked = !turnOn;
+    console.error(e);
+  } finally {
+    checkboxEl.disabled = false;
   }
 }
 
@@ -1278,6 +1334,14 @@ function showLogicModal() {
   setInterval(poll, POLL_MS);
 })();
 
+// Apply manual mode loaded from server
+if (isManual) {
+  el('manual-toggle').checked = true;
+  el('manual-controls').style.display = 'block';
+  el('rule-state').style.opacity = '0.4';
+  el('rule-reason').style.opacity = '0.4';
+}
+
 // Logic diagram button (⋯)
 el('logic-btn').addEventListener('click', showLogicModal);
 
@@ -1293,7 +1357,7 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Auto / Manual toggle ──────────────────────────────────────────────────────
-let isManual = false;
+let isManual = false;   // initialised from server in loadConfig()
 
 el('manual-toggle').addEventListener('change', async () => {
   isManual = el('manual-toggle').checked;

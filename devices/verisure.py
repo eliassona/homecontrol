@@ -184,12 +184,63 @@ def _fetch_all(username: str, cookie_file: str, installation, door_labels: dict)
         log.warning(f"Could not fetch door/window: {e}")
         result["door_window"] = []
 
+    # ── Smart plugs ──────────────────────────────────────────────────────────
+    try:
+        r = session.request(session.smartplugs())
+        plugs = (r.get("data") or {}).get("installation", {}).get("smartplugs") or []
+        result["smartplugs"] = [
+            {
+                "name":  door_labels.get(
+                             p.get("device", {}).get("deviceLabel", ""),
+                             p.get("device", {}).get("area") or p.get("device", {}).get("deviceLabel", "Unknown")
+                         ),
+                "label": p.get("device", {}).get("deviceLabel", ""),
+                "state": p.get("currentState", "UNKNOWN"),  # ON / OFF
+                "icon":  p.get("icon", ""),
+            }
+            for p in plugs
+        ]
+    except Exception as e:
+        log.warning(f"Could not fetch smartplugs: {e}")
+        result["smartplugs"] = []
+
     # ── Summary counts ────────────────────────────────────────────────────────
     result["open_doors"]    = sum(1 for d in result["door_window"] if d["state"] == "OPEN")
     result["climate_count"] = len(result["climate"])
     result["sensor_count"]  = len(result["door_window"])
+    result["smartplug_count"] = len(result["smartplugs"])
 
     return result
+
+
+def _set_smartplug(username: str, cookie_file: str, installation, device_label: str, state: bool) -> dict:
+    """Turn a Verisure smart plug on (True) or off (False)."""
+    verisure = _load_verisure()
+
+    session = verisure.Session(username, "", cookie_file)
+    session._load_cookie_file_into_memory()
+    session.update_cookie()
+
+    installations = session.get_installations()
+    if "errors" in installations:
+        raise ConnectionError(f"Verisure API error: {installations['errors']}")
+
+    inst_list = installations.get("data", {}).get("account", {}).get("installations", [])
+    if not inst_list:
+        raise ValueError("No Verisure installations found")
+
+    if isinstance(installation, str):
+        match = next((i for i in inst_list if i.get("alias") == installation), None)
+        if not match:
+            raise ValueError(f"Installation '{installation}' not found")
+        session.set_giid(match["giid"])
+    else:
+        session.set_giid(inst_list[int(installation)]["giid"])
+
+    resp = session.request(session.set_smartplug(device_label, state))
+    if "errors" in resp:
+        raise ConnectionError(f"Failed to set smartplug: {resp['errors']}")
+    return resp
 
 
 class VerisureSystem(BaseDevice):
@@ -222,6 +273,38 @@ class VerisureSystem(BaseDevice):
         )
 
     async def command(self, cmd: str, params: dict) -> dict:
-        raise NotImplementedError(
-            f"Command '{cmd}' not yet implemented."
-        )
+        """
+        Supported commands:
+          set_smartplug — params: {"device_label": "2AU6 CD4Z", "state": true/false}
+                          or       {"name": "vardagsrum", "state": true/false}
+                          (name is matched against the last known snapshot)
+        """
+        if cmd == "set_smartplug":
+            device_label = params.get("device_label")
+            state        = bool(params.get("state", False))
+
+            # Allow lookup by friendly name from the last snapshot
+            if not device_label:
+                name = (params.get("name") or "").lower()
+                plugs = self._last_snapshot.get("smartplugs", [])
+                match = next((p for p in plugs if p.get("name", "").lower() == name), None)
+                if not match:
+                    raise ValueError(
+                        f"Smart plug '{params.get('name')}' not found. "
+                        f"Available: {[p.get('name') for p in plugs]}"
+                    )
+                device_label = match["label"]
+
+            loop = asyncio.get_event_loop()
+            resp = await loop.run_in_executor(
+                None,
+                _set_smartplug,
+                self.username,
+                self.cookie_file,
+                self.installation,
+                device_label,
+                state,
+            )
+            return {"ok": True, "device_label": device_label, "state": "ON" if state else "OFF", "raw": resp}
+
+        raise NotImplementedError(f"Command '{cmd}' not yet implemented.")

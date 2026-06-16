@@ -97,6 +97,11 @@ async def startup():
     print(f"HomeControl running — {len(registry.list_devices())} device(s), "
           f"{len(rules_cfg)} rule(s)")
 
+    # Restore persisted manual mode
+    if _manual_mode:
+        automator.set_manual(True)
+        print(f"  Manual mode restored from state.json")
+
 @app.on_event("shutdown")
 async def shutdown():
     if automator:
@@ -132,8 +137,27 @@ async def send_command(device_id: str, payload: dict):
     result = await device.command(payload.get("command"), payload.get("params", {}))
     return {"ok": True, "result": result}
 
-# Manual mode state (in-memory, resets on restart)
-_manual_mode: bool = False
+# ── Persistent state ─────────────────────────────────────────────────────────
+import json as _json
+
+STATE_PATH = Path(__file__).parent.parent / "state.json"
+
+def _load_state() -> dict:
+    try:
+        with open(STATE_PATH) as f:
+            return _json.load(f)
+    except Exception:
+        return {}
+
+def _save_state(state: dict):
+    try:
+        with open(STATE_PATH, "w") as f:
+            _json.dump(state, f, indent=2)
+    except Exception as e:
+        logging.warning(f"Could not save state: {e}")
+
+_state = _load_state()
+_manual_mode: bool = bool(_state.get("manual_mode", False))
 
 @app.get("/api/automation")
 async def get_automation():
@@ -146,10 +170,12 @@ async def get_mode():
 
 @app.post("/api/automation/mode")
 async def set_mode(payload: dict):
-    global _manual_mode
+    global _manual_mode, _state
     _manual_mode = bool(payload.get("manual", False))
     if automator:
         automator.set_manual(_manual_mode)
+    _state["manual_mode"] = _manual_mode
+    _save_state(_state)
     return {"manual": _manual_mode}
 
 @app.get("/api/config")
