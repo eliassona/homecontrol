@@ -32,6 +32,7 @@ class BaseRule:
         self.registry = registry
         self.cfg = cfg
         self._task: Optional[asyncio.Task] = None
+        self._manual: bool = False
 
     async def evaluate(self) -> Optional[bool]:
         raise NotImplementedError
@@ -57,7 +58,7 @@ class BaseRule:
             await asyncio.sleep(self.interval_seconds)
 
     async def _tick(self):
-        if getattr(self, 'manual', False):
+        if getattr(self, '_manual', False):
             log.debug(f"[{self.name}] Manual mode — skipping evaluation")
             return
         decision = await self.evaluate()
@@ -289,7 +290,7 @@ class Automator:
     def set_manual(self, manual: bool):
         self._manual = manual
         for rule in self._rules:
-            rule.manual = manual
+            rule._manual = manual
         log.info(f"Automation mode: {'MANUAL' if manual else 'AUTO'}")
 
     async def start(self):
