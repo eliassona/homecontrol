@@ -237,6 +237,40 @@
       </div>
     </div>
 
+    <!-- Tesla Wall Connector -->
+    <div id="tesla-section" style="display:none">
+      <div class="section-label">EV Charger</div>
+      <div class="miner-panel">
+        <div class="miner-header">
+          <h2>Tesla Wall Connector</h2>
+          <span class="badge offline" id="tesla-state-badge">—</span>
+        </div>
+        <div class="hashrate-row">
+          <span class="hashrate-big" id="tesla-power">—</span>
+          <span class="hashrate-unit" id="tesla-power-unit">W</span>
+          <span class="hashrate-label" style="margin-left:8px" id="tesla-session-energy"></span>
+        </div>
+        <div class="miner-stats">
+          <div class="stat">
+            <div class="stat-label">Current</div>
+            <div class="stat-val" id="tesla-current">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Grid voltage</div>
+            <div class="stat-val" id="tesla-voltage">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Session time</div>
+            <div class="stat-val" id="tesla-session-time">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Handle temp</div>
+            <div class="stat-val" id="tesla-temp">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Outside weather -->
     <div>
       <div class="section-label" id="weather-label">Outside weather</div>
@@ -758,6 +792,46 @@ function renderRoomSensors(devices) {
   }).join('');
 }
 
+// ── Render Tesla Wall Connector ──────────────────────────────────────────────
+function renderTesla(d) {
+  const section = el('tesla-section');
+  if (!d) { section.style.display = 'none'; return; }
+  section.style.display = '';
+
+  const online   = d.online;
+  const charging = d.charging;
+  const state    = d.evse_state_str || '—';
+
+  // Badge color by state
+  const badgeEl = el('tesla-state-badge');
+  badgeEl.textContent = state;
+  badgeEl.className = charging   ? 'badge online'
+                    : d.vehicle_connected ? 'badge hold'
+                    : 'badge offline';
+
+  // Power
+  const pw = d.power_w || 0;
+  if (pw >= 1000) {
+    setText('tesla-power', (pw / 1000).toFixed(2));
+    setText('tesla-power-unit', 'kW');
+  } else {
+    setText('tesla-power', pw);
+    setText('tesla-power-unit', 'W');
+  }
+  el('tesla-power').style.color = charging ? 'var(--accent2)' : 'var(--muted)';
+
+  // Session energy
+  const wh = d.session_energy_wh || 0;
+  setText('tesla-session-energy', wh > 0 ? (wh / 1000).toFixed(2) + ' kWh this session' : '');
+
+  // Stats
+  const totalA = (d.current_a_a || 0) + (d.current_b_a || 0) + (d.current_c_a || 0);
+  setText('tesla-current',      totalA > 0 ? totalA.toFixed(1) + ' A' : '—');
+  setText('tesla-voltage',      d.grid_v != null ? d.grid_v.toFixed(1) + ' V' : '—');
+  setText('tesla-session-time', d.session_str || '—');
+  setText('tesla-temp',         d.handle_temp_c != null ? d.handle_temp_c.toFixed(1) + '°C' : '—');
+}
+
 // ── Render power meter ───────────────────────────────────────────────────────
 function renderPower(d) {
   const online = d.online;
@@ -1131,6 +1205,7 @@ async function poll() {
 
     const devices = data.devices || {};
     renderRoomSensors(devices);
+    renderTesla(devices.tesla_charger);
     if (devices.smart_meter)       renderPower(devices.smart_meter);
     if (devices.verisure)          renderVerisure(devices.verisure);
     if (devices.outside_weather)   renderWeather(devices.outside_weather);
