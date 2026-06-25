@@ -264,10 +264,109 @@ class MinerTempPriceRule(MinerRule):
         return None
 
 
+# ── Tesla charge rule ────────────────────────────────────────────────────────
+
+class TeslaChargeRule(BaseRule):
+    """
+    Start/stop Tesla charging based on electricity price.
+
+    Logic:
+      START charging when:  price < avg - price_hys  AND  battery < charge_limit
+      STOP  charging when:  price > avg + price_hys  OR   battery >= charge_limit
+      HOLD  otherwise (dead zone)
+
+    Config keys:
+      car_device         "tesla_car" (default)
+      price_device       "electricity_price" (default)
+      price_hys_ore      öre band around daily average (default: 20)
+      min_battery_pct    Never stop charging below this % (default: 20)
+      interval_seconds   How often to evaluate (default: 900 — 15 min)
+    """
+
+    name = "tesla_charge_rule"
+
+    def __init__(self, registry, cfg: dict):
+        super().__init__(registry, cfg)
+        self.car_id        = cfg.get("car_device",    "tesla_car")
+        self.price_id      = cfg.get("price_device",  "electricity_price")
+        self.price_hys     = float(cfg.get("price_hys_ore",   20.0))
+        self.min_battery   = float(cfg.get("min_battery_pct", 20.0))
+        self.interval_seconds = int(cfg.get("interval_seconds", 900))
+
+    async def evaluate(self) -> Optional[bool]:
+        # ── Price ────────────────────────────────────────────────────────────
+        price_dev = self.registry.get(self.price_id)
+        if not price_dev or not price_dev.cached_snapshot().get("online"):
+            log.warning(f"[{self.name}] Price device offline — holding")
+            return None
+
+        snap      = price_dev.cached_snapshot()
+        price_now = snap.get("price_now_ore")
+        price_avg = snap.get("today_avg_ore")
+        if price_now is None or price_avg is None:
+            return None
+
+        thresh_on  = price_avg - self.price_hys
+        thresh_off = price_avg + self.price_hys
+
+        # ── Car state ─────────────────────────────────────────────────────────
+        car = self.registry.get(self.car_id)
+        if not car:
+            log.warning(f"[{self.name}] Car device '{self.car_id}' not found")
+            return None
+
+        car_snap = car.cached_snapshot()
+        if not car_snap.get("online"):
+            log.info(f"[{self.name}] Car offline/asleep — holding")
+            return None
+
+        battery      = car_snap.get("battery_pct", 0)
+        charge_limit = car_snap.get("charge_limit_pct", 80)
+        plugged_in   = car_snap.get("plugged_in", False)
+
+        if not plugged_in:
+            log.info(f"[{self.name}] Car not plugged in — nothing to do")
+            return None
+
+        # Never stop charging if battery is critically low
+        if battery < self.min_battery:
+            log.info(f"[{self.name}] Battery {battery}% < min {self.min_battery}% — forcing charge")
+            return True
+
+        # Already at charge limit
+        if battery >= charge_limit:
+            log.info(f"[{self.name}] Battery {battery}% >= limit {charge_limit}% — stopping")
+            return False
+
+        log.info(
+            f"[{self.name}] battery={battery}%  "
+            f"price={price_now:.1f} öre  avg={price_avg:.1f}  "
+            f"on<{thresh_on:.1f}  off>{thresh_off:.1f}"
+        )
+
+        if price_now < thresh_on:
+            return True   # cheap — charge
+        if price_now > thresh_off:
+            return False  # expensive — stop
+        return None       # dead zone — hold
+
+    async def apply(self, should_run: bool):
+        car = self.registry.get(self.car_id)
+        if not car:
+            return
+        try:
+            cmd = "start_charging" if should_run else "stop_charging"
+            log.info(f"[{self.name}] {'▶ Starting' if should_run else '⏸ Stopping'} Tesla charging")
+            await car.command(cmd, {})
+        except Exception as e:
+            log.error(f"[{self.name}] Failed to send command: {e}")
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
 
 RULE_CLASSES = {
     "miner_temp_price_rule": MinerTempPriceRule,
+    "tesla_charge_rule":     TeslaChargeRule,
 }
 
 

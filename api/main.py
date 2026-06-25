@@ -21,8 +21,10 @@ from devices.verisure import VerisureSystem
 from devices.smart_meter import SmartMeterGateway
 from devices.shelly_ht import ShellyHT
 from devices.tesla_wall_connector import TeslaWallConnector
+from devices.tesla_car import TeslaCar
 from devices.shelly_ht import ShellyHT
 from devices.tesla_wall_connector import TeslaWallConnector
+from devices.tesla_car import TeslaCar
 from api.automator import Automator
 
 logging.basicConfig(
@@ -51,8 +53,10 @@ DEVICE_CLASSES = {
     "smart_meter_gateway": SmartMeterGateway,
     "shelly_ht":           ShellyHT,
     "tesla_wall_connector": TeslaWallConnector,
+    "tesla_car":            TeslaCar,
     "shelly_ht":           ShellyHT,
     "tesla_wall_connector": TeslaWallConnector,
+    "tesla_car":            TeslaCar,
     # "room_sensor":   RoomSensor,
     # "power_meter":   PowerMeter,
     # "tesla_charger": TeslaCharger,

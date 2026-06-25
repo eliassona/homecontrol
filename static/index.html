@@ -237,6 +237,40 @@
       </div>
     </div>
 
+    <!-- Tesla car -->
+    <div id="tesla-car-section" style="display:none">
+      <div class="section-label">Tesla Model Y</div>
+      <div class="miner-panel">
+        <div class="miner-header">
+          <h2 id="tesla-car-name">Tesla</h2>
+          <span class="badge offline" id="tesla-car-badge">—</span>
+        </div>
+        <div class="hashrate-row">
+          <span class="hashrate-big" id="tesla-batt">—</span>
+          <span class="hashrate-unit">%</span>
+          <span class="hashrate-label" style="margin-left:8px" id="tesla-range"></span>
+        </div>
+        <div class="miner-stats">
+          <div class="stat">
+            <div class="stat-label">Charge state</div>
+            <div class="stat-val" id="tesla-charge-state">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Charge limit</div>
+            <div class="stat-val" id="tesla-charge-limit">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Time to full</div>
+            <div class="stat-val" id="tesla-time-full">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Cabin temp</div>
+            <div class="stat-val" id="tesla-cabin-temp">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Tesla Wall Connector -->
     <div id="tesla-section" style="display:none">
       <div class="section-label">EV Charger</div>
@@ -792,6 +826,44 @@ function renderRoomSensors(devices) {
   }).join('');
 }
 
+// ── Render Tesla car ─────────────────────────────────────────────────────────
+function renderTeslaCar(d) {
+  const section = el('tesla-car-section');
+  if (!d || !d.online) { section.style.display = 'none'; return; }
+  section.style.display = '';
+
+  setText('tesla-car-name', d.vehicle_name || 'Tesla Model Y');
+
+  const badge = el('tesla-car-badge');
+  const state = d.charge_state || '—';
+  badge.textContent = state;
+  badge.className = d.charging     ? 'badge online'
+                  : d.plugged_in   ? 'badge hold'
+                  : 'badge offline';
+
+  // Battery with color
+  const batt = d.battery_pct;
+  const battEl = el('tesla-batt');
+  battEl.textContent = batt != null ? batt : '—';
+  battEl.style.color = batt >= 60 ? 'var(--accent2)'
+                     : batt >= 30 ? 'var(--accent)'
+                     : 'var(--danger)';
+
+  setText('tesla-range',        d.battery_range_km != null ? d.battery_range_km + ' km' : '');
+  setText('tesla-charge-state', state);
+  setText('tesla-charge-limit', d.charge_limit_pct != null ? d.charge_limit_pct + '%' : '—');
+
+  const mins = d.minutes_to_full;
+  if (mins && mins > 0) {
+    const h = Math.floor(mins / 60), m = mins % 60;
+    setText('tesla-time-full', h ? `${h}h ${m}m` : `${m}m`);
+  } else {
+    setText('tesla-time-full', '—');
+  }
+
+  setText('tesla-cabin-temp', d.inside_temp_c != null ? d.inside_temp_c.toFixed(1) + '°C' : '—');
+}
+
 // ── Render Tesla Wall Connector ──────────────────────────────────────────────
 function renderTesla(d) {
   const section = el('tesla-section');
@@ -1205,6 +1277,7 @@ async function poll() {
 
     const devices = data.devices || {};
     renderRoomSensors(devices);
+    renderTeslaCar(devices.tesla_car);
     renderTesla(devices.tesla_charger);
     if (devices.smart_meter)       renderPower(devices.smart_meter);
     if (devices.verisure)          renderVerisure(devices.verisure);
