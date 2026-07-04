@@ -22,9 +22,11 @@ from devices.smart_meter import SmartMeterGateway
 from devices.shelly_ht import ShellyHT
 from devices.tesla_wall_connector import TeslaWallConnector
 from devices.tesla_car import TeslaCar
+from devices.bitcoin_market import BitcoinMarket
 from devices.shelly_ht import ShellyHT
 from devices.tesla_wall_connector import TeslaWallConnector
 from devices.tesla_car import TeslaCar
+from devices.bitcoin_market import BitcoinMarket
 from api.automator import Automator
 
 logging.basicConfig(
@@ -54,9 +56,11 @@ DEVICE_CLASSES = {
     "shelly_ht":           ShellyHT,
     "tesla_wall_connector": TeslaWallConnector,
     "tesla_car":            TeslaCar,
+    "bitcoin_market":       BitcoinMarket,
     "shelly_ht":           ShellyHT,
     "tesla_wall_connector": TeslaWallConnector,
     "tesla_car":            TeslaCar,
+    "bitcoin_market":       BitcoinMarket,
     # "room_sensor":   RoomSensor,
     # "power_meter":   PowerMeter,
     # "tesla_charger": TeslaCharger,
@@ -188,9 +192,14 @@ async def set_mode(payload: dict):
 
 @app.get("/api/config")
 async def get_config():
+    # Include device-level config that the dashboard needs (non-sensitive only)
+    device_cfg = {}
+    for k, v in cfg.get("devices", {}).items():
+        device_cfg[k] = {dk: dv for dk, dv in v.items()
+                         if dk not in ("password", "username", "token_file", "cookie_file")}
     return {
         "dashboard":  cfg.get("dashboard", {}),
-        "devices":    list(cfg.get("devices", {}).keys()),
+        "devices":    device_cfg,
         "automation": cfg.get("automation", {}),
     }
 

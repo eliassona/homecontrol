@@ -24,11 +24,12 @@ from devices.registry import BaseDevice
 class S9Miner(BaseDevice):
     device_type = "s9_miner"
 
-    def __init__(self, host: str, port: int = 4028, poll_interval: int = 15):
+    def __init__(self, host: str, port: int = 4028, poll_interval: int = 15, power_w: int = 500):
         super().__init__()
         self.host = host
         self.port = port
         self.poll_interval = poll_interval
+        self.power_w = power_w
 
     async def _rpc(self, command: str, parameter: str = None) -> dict:
         """
@@ -131,6 +132,7 @@ class S9Miner(BaseDevice):
             "pool_user":         active.get("User", ""),
             "pool_status":       active.get("Status", ""),
             "firmware":          "BOSminer",
+            "power_w":           self.power_w,
             **temps,
         }
 

@@ -420,11 +420,64 @@
             <div class="stat-label">Temp (avg / max)</div>
             <div class="stat-val" id="temp-val">—</div>
           </div>
+          <div class="stat" id="earnings-stat" style="display:none">
+            <div class="stat-label">Est. earnings/day</div>
+            <div class="stat-val" id="earnings-val">—</div>
+          </div>
+          <div class="stat" id="elec-cost-stat" style="display:none">
+            <div class="stat-label">Elec. cost/day</div>
+            <div class="stat-val" id="elec-cost-val">—</div>
+          </div>
+          <div class="stat" id="profit-stat" style="display:none">
+            <div class="stat-label">Est. profit/day</div>
+            <div class="stat-val" id="profit-val">—</div>
+          </div>
         </div>
         <canvas id="sparkline"></canvas>
         <div class="pool-bar">
           Pool: <span id="pool-url">—</span>
           &nbsp;·&nbsp; User: <span id="pool-user">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Markets -->
+    <div id="markets-section" style="display:none">
+      <div class="section-label">Bitcoin market</div>
+      <div class="miner-panel">
+        <div class="miner-header">
+          <h2>Bitcoin</h2>
+          <span class="badge hold" id="btc-change-badge">—</span>
+        </div>
+        <div class="hashrate-row">
+          <span class="hashrate-big" id="btc-price" style="color:var(--accent)">—</span>
+          <span class="hashrate-unit">SEK</span>
+        </div>
+        <div class="miner-stats">
+          <div class="stat">
+            <div class="stat-label">SEK/GH/day</div>
+            <div class="stat-val" id="btc-per-gh">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">SEK/TH/day</div>
+            <div class="stat-val" id="btc-per-th">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Network hashrate</div>
+            <div class="stat-val" id="btc-network-hr">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Difficulty change</div>
+            <div class="stat-val" id="btc-diff-change">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Block reward</div>
+            <div class="stat-val" id="btc-reward">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Next retarget</div>
+            <div class="stat-val" id="btc-retarget">—</div>
+          </div>
         </div>
       </div>
     </div>
@@ -605,6 +658,14 @@ async function loadConfig() {
   } catch (e) {
     console.warn('Could not load automation mode');
   }
+
+  // Load miner power_w from device config
+  try {
+    const res = await fetch(`${API}/api/config`);
+    const cfg = await res.json();
+    const minerCfg = cfg?.devices?.s9_miner;
+    if (minerCfg?.power_w) window._minerPowerW = minerCfg.power_w;
+  } catch (e) {}
 }
 
 // ── Sparkline history ──────────────────────────────────────────────────────
@@ -1150,6 +1211,39 @@ function renderPrice(d) {
 }
 
 // ── Render ────────────────────────────────────────────────────────────────
+// ── Render Bitcoin markets ───────────────────────────────────────────────────
+function renderMarkets(m) {
+  const section = el('markets-section');
+  if (!m || !m.online) { section.style.display = 'none'; return; }
+  section.style.display = '';
+
+  const price = m.btc_price_sek;
+  setText('btc-price', price != null ? Math.round(price).toLocaleString('sv-SE') : '—');
+
+  const chg   = m.btc_change_24h_pct;
+  const chgEl = el('btc-change-badge');
+  chgEl.textContent = chg != null ? (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%' : '—';
+  chgEl.className   = chg == null ? 'badge hold' : chg >= 0 ? 'badge online' : 'badge offline';
+
+  setText('btc-per-gh', m.daily_sek_per_gh != null ? m.daily_sek_per_gh.toFixed(4) + ' SEK' : '—');
+  setText('btc-per-th', m.daily_sek_per_th != null ? m.daily_sek_per_th.toFixed(2)  + ' SEK' : '—');
+
+  const networkTH = m.network_hashrate_th;
+  if (networkTH) {
+    const eh = networkTH / 1e6;
+    setText('btc-network-hr', eh >= 1 ? eh.toFixed(0) + ' EH/s' : (networkTH/1000).toFixed(0) + ' PH/s');
+  }
+
+  const diff   = m.difficulty_change_pct;
+  const diffEl = el('btc-diff-change');
+  diffEl.textContent = diff != null ? (diff >= 0 ? '+' : '') + diff.toFixed(2) + '%' : '—';
+  diffEl.style.color = diff == null ? 'var(--muted)' : diff > 5 ? 'var(--danger)' : diff < -5 ? 'var(--accent2)' : 'var(--text)';
+
+  setText('btc-reward',   m.block_reward_btc != null ? m.block_reward_btc + ' BTC' : '—');
+  setText('btc-retarget', m.next_retarget_blocks != null ? m.next_retarget_blocks + ' blocks' : '—');
+}
+
+// ── Render miner ──────────────────────────────────────────────────────────────
 function renderMiner(d) {
   const online = d.online;
   el('miner-badge').textContent = online ? 'online' : 'offline';
@@ -1179,6 +1273,48 @@ function renderMiner(d) {
 
   pushHistory(hr);
   drawSparkline();
+
+  // Daily earnings — only shown when miner is actively mining
+  updateMinerEconomics(d);
+}
+
+function updateMinerEconomics(miner) {
+  const mkt   = window._lastDevices && window._lastDevices.bitcoin_market;
+  const price = window._lastDevices && window._lastDevices.electricity_price;
+  const earningsStat = el('earnings-stat');
+  const elecCostStat = el('elec-cost-stat');
+  const profitStat   = el('profit-stat');
+
+  const mining  = miner && miner.online && miner.mining_active;
+  const hr      = miner && miner.hashrate_5s_gh;
+  const powerW  = (miner && miner.power_w) || window._minerPowerW || 500;
+
+  if (!mkt || !mkt.online || mkt.daily_sek_per_gh == null || !hr) {
+    earningsStat.style.display = 'none';
+    elecCostStat.style.display = 'none';
+    profitStat.style.display   = 'none';
+    return;
+  }
+
+  // Earnings: only count hours when actually mining
+  // If paused: 0 earnings, 0 electricity cost
+  const earningsSek = mining ? hr * mkt.daily_sek_per_gh : 0;
+  setText('earnings-val', earningsSek.toFixed(2) + ' SEK' + (mining ? '' : ' (paused)'));
+  el('earnings-val').style.color = mining ? 'var(--accent2)' : 'var(--muted)';
+  earningsStat.style.display = '';
+
+  if (price && price.online && price.today_avg_ore != null) {
+    const kwhPerDay = (powerW / 1000) * 24;
+    const elecSek   = mining ? kwhPerDay * price.today_avg_ore / 100 : 0;
+    setText('elec-cost-val', elecSek.toFixed(2) + ' SEK');
+    el('elec-cost-val').style.color = mining ? 'var(--danger)' : 'var(--muted)';
+    elecCostStat.style.display = '';
+
+    const profit = earningsSek - elecSek;
+    setText('profit-val', (mining ? (profit >= 0 ? '+' : '') + profit.toFixed(2) : '0.00') + ' SEK');
+    el('profit-val').style.color = !mining ? 'var(--muted)' : profit >= 0 ? 'var(--accent2)' : 'var(--danger)';
+    profitStat.style.display = '';
+  }
 }
 
 // ── Render automation rule status ────────────────────────────────────────────
@@ -1276,13 +1412,16 @@ async function poll() {
     setText('last-updated', new Date(data.timestamp + 'Z').toLocaleTimeString());
 
     const devices = data.devices || {};
+    window._lastDevices = devices;
     renderRoomSensors(devices);
     renderTeslaCar(devices.tesla_car);
     renderTesla(devices.tesla_charger);
     if (devices.smart_meter)       renderPower(devices.smart_meter);
     if (devices.verisure)          renderVerisure(devices.verisure);
     if (devices.outside_weather)   renderWeather(devices.outside_weather);
+    renderMarkets(devices.bitcoin_market);
     if (devices.s9_miner)          renderMiner(devices.s9_miner);
+    if (devices.s9_miner && devices.bitcoin_market) updateMinerEconomics(devices.s9_miner);
     if (devices.electricity_price) renderPrice(devices.electricity_price);
     // Future: if (devices.power_meter) renderPower(devices.power_meter);
 
