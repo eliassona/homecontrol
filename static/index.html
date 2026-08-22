@@ -1463,7 +1463,7 @@ function buildLogicDiagram() {
   const indoorName = r.indoor_sensor ?? null;
   const hasIndoor = !!indoorName;
 
-  const svgH = hasIndoor ? 680 : 560;
+  const svgH = hasIndoor ? 780 : 660;
   const svg = el('logic-svg');
   svg.setAttribute('viewBox', `0 0 620 ${svgH}`);
   svg.setAttribute('height', svgH);
@@ -1530,39 +1530,49 @@ function buildLogicDiagram() {
   svg.appendChild(g);
   svg.appendChild(arrow(CX, 60, CX, 94));
 
-  // ── Outside temp ──
-  g = coloredBox(160, 94, 300, 56, C.blue);
-  g.appendChild(txt(CX, 112, 'Outside temperature', {weight:'600'}));
-  g.appendChild(label(CX, 132, `Resume < ${tempOn}°C  ·  Pause > ${tempOff}°C`));
+  // ── Time window ──
+  const pad = n => String(n).padStart(2,'0');
+  g = coloredBox(170, 94, 280, 56, C.gray);
+  g.appendChild(txt(CX, 112, 'Time window', {weight:'600'}));
+  g.appendChild(label(CX, 132, `Only start between ${pad(startHour)}:00 – ${pad(stopHour)}:00`));
   svg.appendChild(g);
   svg.appendChild(arrow(CX, 150, CX, 184));
   svg.appendChild(mk('text',{x:CX+8,y:172,'font-size':'10',fill:'var(--muted-color,#6b7080)',
     'font-family':'DM Mono,monospace','dominant-baseline':'central'}, 'ok'));
 
-  // ── Price ──
-  g = coloredBox(110, 184, 400, 56, C.amber);
-  g.appendChild(txt(CX, 202, 'Electricity price', {weight:'600'}));
-  g.appendChild(label(CX, 222, `Resume < avg−${priceHys} öre  ·  Pause > avg+${priceHys} öre`));
+  // ── Outside temp ──
+  g = coloredBox(160, 184, 300, 56, C.blue);
+  g.appendChild(txt(CX, 202, 'Outside temperature', {weight:'600'}));
+  g.appendChild(label(CX, 222, `Resume < ${tempOn}°C  ·  Pause > ${tempOff}°C`));
   svg.appendChild(g);
   svg.appendChild(arrow(CX, 240, CX, 274));
   svg.appendChild(mk('text',{x:CX+8,y:262,'font-size':'10',fill:'var(--muted-color,#6b7080)',
+    'font-family':'DM Mono,monospace','dominant-baseline':'central'}, 'ok'));
+
+  // ── Price ──
+  g = coloredBox(110, 274, 400, 56, C.amber);
+  g.appendChild(txt(CX, 292, 'Electricity price', {weight:'600'}));
+  g.appendChild(label(CX, 312, `Resume < avg−${priceHys} öre  ·  Pause > avg+${priceHys} öre`));
+  svg.appendChild(g);
+  svg.appendChild(arrow(CX, 330, CX, 364));
+  svg.appendChild(mk('text',{x:CX+8,y:352,'font-size':'10',fill:'var(--muted-color,#6b7080)',
     'font-family':'DM Mono,monospace','dominant-baseline':'central'}, 'ok'));
 
   let resumeY, holdY, pauseX, pauseY;
 
   if (hasIndoor) {
     // ── Indoor temp ──
-    g = coloredBox(120, 274, 380, 56, C.teal);
-    g.appendChild(txt(CX, 292, indoorName, {weight:'600'}));
-    g.appendChild(label(CX, 308, `Resume < ${indoorOn}°C  ·  Pause > ${indoorOff}°C`));
-    g.appendChild(label(CX, 322, `Heat override < ${(indoorOn - heatOffset).toFixed(1)}°C (ignores price)`));
+    g = coloredBox(120, 364, 380, 56, C.teal);
+    g.appendChild(txt(CX, 382, indoorName, {weight:'600'}));
+    g.appendChild(label(CX, 398, `Resume < ${indoorOn}°C  ·  Pause > ${indoorOff}°C`));
+    g.appendChild(label(CX, 412, `Heat override < ${(indoorOn - heatOffset).toFixed(1)}°C (ignores price)`));
     svg.appendChild(g);
-    svg.appendChild(arrow(CX, 330, CX, 364));
-    svg.appendChild(mk('text',{x:CX+8,y:352,'font-size':'10',fill:'var(--muted-color,#6b7080)',
+    svg.appendChild(arrow(CX, 420, CX, 454));
+    svg.appendChild(mk('text',{x:CX+8,y:442,'font-size':'10',fill:'var(--muted-color,#6b7080)',
       'font-family':'DM Mono,monospace','dominant-baseline':'central'}, 'all ok'));
-    resumeY = 364; holdY = 500; pauseX = 490; pauseY = 364;
+    resumeY = 454; holdY = 590; pauseX = 490; pauseY = 454;
   } else {
-    resumeY = 274; holdY = 400; pauseX = 490; pauseY = 274;
+    resumeY = 364; holdY = 490; pauseX = 490; pauseY = 364;
   }
 
   // ── Resume ──
@@ -1583,28 +1593,31 @@ function buildLogicDiagram() {
     fill:'rgba(255,255,255,0.5)'}));
   svg.appendChild(g);
 
-  // Dead-zone left-side pipes → hold
+  // Dead-zone left-side pipes → hold (time window + outside temp + price + optional indoor)
   const deadPipes = hasIndoor
-    ? [[160,122,60,122],[110,212,40,212],[120,302,20,302]]
-    : [[160,122,60,122],[110,212,40,212]];
-  deadPipes.forEach(([sx,sy,lx], idx) => {
+    ? [[170,122,60,122],[160,212,40,212],[110,302,20,302],[120,392,5,392]]
+    : [[170,122,60,122],[160,212,40,212],[110,302,20,302]];
+  deadPipes.forEach(([sx,sy,lx]) => {
     const p = mk('path',{d:`M${sx} ${sy} L${lx} ${sy} L${lx} ${holdY+20} L200 ${holdY+20}`,
       fill:'none',stroke:'rgba(255,255,255,0.12)','stroke-width':'1',
       'marker-end':'url(#arr-m)'});
     svg.appendChild(p);
   });
-  svg.appendChild(label(35, (hasIndoor ? 222 : 167), 'dead zone'));
+  svg.appendChild(label(35, (hasIndoor ? 302 : 212), 'dead zone'));
 
-  // Pause right-side pipes
+  // Pause right-side pipes (outside temp + price + optional indoor)
   const pausePipes = hasIndoor
-    ? [{sx:460,sy:122},{sx:510,sy:212},{sx:500,sy:302}]
-    : [{sx:460,sy:122},{sx:510,sy:212}];
+    ? [{sx:460,sy:212},{sx:510,sy:302},{sx:500,sy:392}]
+    : [{sx:460,sy:212},{sx:510,sy:302}];
   pausePipes.forEach(({sx,sy}) => {
     const p = mk('path',{d:`M${sx} ${sy} L570 ${sy} L570 ${pauseY+20} L606 ${pauseY+20}`,
       fill:'none',stroke:'rgba(255,91,91,0.25)','stroke-width':'1',
       'marker-end':'url(#arr-m)'});
     svg.appendChild(p);
   });
+
+  // Pause pipes for time window box → hold (not pause — outside window means hold, not pause)
+  // Time window dead-zone pipe already handled in deadPipes above
 
   // Legend
   const ly = svgH - 22;
