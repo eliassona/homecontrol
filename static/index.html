@@ -1454,14 +1454,16 @@ async function poll() {
 // ── Logic diagram ────────────────────────────────────────────────────────────
 function buildLogicDiagram() {
   const r = RULE_CFG;
-  const tempOn    = r.temp_on        ?? 20;
-  const tempOff   = r.temp_off       ?? 22;
-  const priceHys  = r.price_hys_ore  ?? 20;
-  const indoorOn     = r.indoor_temp_on     ?? 22;
-  const indoorOff    = r.indoor_temp_off    ?? 24;
-  const heatOffset   = r.indoor_heat_offset ?? 0.5;
+  const tempOn     = r.temp_on        ?? 20;
+  const tempOff    = r.temp_off       ?? 22;
+  const priceHys   = r.price_hys_ore  ?? 20;
+  const indoorOn   = r.indoor_temp_on     ?? 22;
+  const indoorOff  = r.indoor_temp_off    ?? 24;
+  const heatOffset = r.indoor_heat_offset ?? 0.5;
   const indoorName = r.indoor_sensor ?? null;
-  const hasIndoor = !!indoorName;
+  const hasIndoor  = !!indoorName;
+  const startHour  = r.start_hour ?? 8;
+  const stopHour   = r.stop_hour  ?? 23;
 
   const svgH = hasIndoor ? 780 : 660;
   const svg = el('logic-svg');
