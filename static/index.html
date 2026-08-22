@@ -1330,6 +1330,10 @@ function renderMinerRule(weather, price, miner, verisure) {
   const indoorOff    = RULE_CFG.indoor_temp_off    ?? 24;
   const heatOffset   = RULE_CFG.indoor_heat_offset ?? 0.5;
   const heatThresh   = indoorOn - heatOffset;
+  const startHour    = RULE_CFG.start_hour ?? 8;
+  const stopHour     = RULE_CFG.stop_hour  ?? 23;
+  const currentHour  = new Date().getHours();
+  const withinHours  = currentHour >= startHour && currentHour < stopHour;
 
   const temp     = weather.temperature_c;
   const priceNow = price.price_now_ore;
@@ -1361,10 +1365,10 @@ function renderMinerRule(weather, price, miner, verisure) {
 
   let state, label, reason;
 
-  if (tooCold && outsideGood) {
+  if (tooCold && outsideGood && withinHours) {
     state = 'run'; label = 'RESUME';
     reason = `❄ Too cold override: indoor ${indoorTemp}°C < ${heatThresh.toFixed(1)}°C — heating regardless of price`;
-  } else if (outsideGood && priceGood && indoorGood) {
+  } else if (outsideGood && priceGood && indoorGood && withinHours) {
     state = 'run'; label = 'RESUME';
     const parts = [
       `outside ${temp}°C < ${tempOn}°C`,
@@ -1372,6 +1376,9 @@ function renderMinerRule(weather, price, miner, verisure) {
     ];
     if (indoorTemp != null) parts.push(`indoor ${indoorTemp}°C < ${indoorOn}°C`);
     reason = parts.join('  ·  ');
+  } else if (!withinHours && !mining) {
+    state = 'hold'; label = 'HOLD';
+    reason = `Outside start window (${String(startHour).padStart(2,'0')}:00–${String(stopHour).padStart(2,'0')}:00) — will not start`;
   } else if (outsideBad || priceBad || indoorBad) {
     state = 'pause'; label = 'PAUSE';
     const reasons = [];

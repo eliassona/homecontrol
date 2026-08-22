@@ -138,6 +138,8 @@ class MinerTempPriceRule(MinerRule):
         self.indoor_temp_off     = float(cfg.get("indoor_temp_off",     24.0))
         self.indoor_heat_offset  = float(cfg.get("indoor_heat_offset",   0.5))
         # If indoor_temp < indoor_temp_on - indoor_heat_offset → resume regardless of price
+        self.start_hour = int(cfg.get("start_hour", 8))   # earliest hour to START miner
+        self.stop_hour  = int(cfg.get("stop_hour",  23))  # latest hour to START miner
 
     def _get_indoor_temp(self) -> Optional[float]:
         """
@@ -248,12 +250,23 @@ class MinerTempPriceRule(MinerRule):
             indoor_good = True   # not configured → don't block
             indoor_bad  = False
 
-        #   RESUME: too cold override (ignores price, still respects outside temp)
-        if too_cold and outside_good:
+        # ── Time window — only affects RESUMING, never prevents staying running ──
+        from datetime import datetime as _dt
+        current_hour = _dt.now().hour
+        within_hours = self.start_hour <= current_hour < self.stop_hour
+        if not within_hours:
+            log.info(
+                f"[{self.name}] Outside start window "
+                f"({self.start_hour:02d}:00–{self.stop_hour:02d}:00) — "
+                f"will not start miner (but won't stop if already running)"
+            )
+
+        #   RESUME: too cold override (ignores price, still respects outside temp and time)
+        if too_cold and outside_good and within_hours:
             return True
 
         #   RESUME: all conditions clearly favourable
-        if outside_good and price_good and indoor_good:
+        if outside_good and price_good and indoor_good and within_hours:
             return True
 
         #   PAUSE: any single condition clearly unfavourable
