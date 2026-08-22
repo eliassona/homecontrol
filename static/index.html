@@ -1333,7 +1333,10 @@ function renderMinerRule(weather, price, miner, verisure) {
   const startHour    = RULE_CFG.start_hour ?? 8;
   const stopHour     = RULE_CFG.stop_hour  ?? 23;
   const currentHour  = new Date().getHours();
-  const withinHours  = currentHour >= startHour && currentHour < stopHour;
+  // Handle midnight-crossing windows (e.g. 23:00–07:00)
+  const withinHours = startHour < stopHour
+    ? currentHour >= startHour && currentHour < stopHour   // normal window e.g. 08:00-23:00
+    : currentHour >= startHour || currentHour < stopHour;  // wraps midnight e.g. 23:00-07:00
 
   const temp     = weather.temperature_c;
   const priceNow = price.price_now_ore;

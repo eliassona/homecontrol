@@ -253,7 +253,11 @@ class MinerTempPriceRule(MinerRule):
         # ── Time window — only affects RESUMING, never prevents staying running ──
         from datetime import datetime as _dt
         current_hour = _dt.now().hour
-        within_hours = self.start_hour <= current_hour < self.stop_hour
+        if self.start_hour < self.stop_hour:
+            within_hours = self.start_hour <= current_hour < self.stop_hour
+        else:
+            # Window wraps midnight e.g. 23:00–07:00
+            within_hours = current_hour >= self.start_hour or current_hour < self.stop_hour
         if not within_hours:
             log.info(
                 f"[{self.name}] Outside start window "
