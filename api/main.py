@@ -211,6 +211,37 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 async def dashboard():
     return FileResponse("static/index.html")
 
+@app.get("/api/elcentral")
+async def get_elcentral():
+    """Return the electrical panel circuit information."""
+    elcentral_path = Path(__file__).parent.parent / "elcentral_information.json"
+    try:
+        with open(elcentral_path) as f:
+            return json.load(f)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="elcentral_information.json not found")
+
+@app.get("/api/elcentral/phase/{phase}")
+async def get_phase_circuits(phase: str):
+    """Return circuits for a specific phase (L1, L2, L3)."""
+    elcentral_path = Path(__file__).parent.parent / "elcentral_information.json"
+    try:
+        with open(elcentral_path) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="elcentral_information.json not found")
+
+    phase = phase.upper()
+    circuits = [
+        c for c in data["panel"]["circuits"]
+        if phase in c.get("phases", [])
+    ]
+    return {
+        "phase": phase,
+        "circuits": circuits,
+        "row": data["phase_rows"].get(phase, {}).get("row"),
+    }
+
 @app.get("/simple")
 async def simple_dashboard():
     return FileResponse("static/simple.html")

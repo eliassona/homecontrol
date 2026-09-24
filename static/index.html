@@ -204,16 +204,16 @@
             <div class="stat-label">L3</div>
             <div class="stat-val" id="power-l3">—</div>
           </div>
-          <div class="stat">
-            <div class="stat-label">Voltage L1</div>
+          <div class="stat" style="cursor:pointer" onclick="showPhaseInfo('L1')" title="Click to see L1 circuits">
+            <div class="stat-label">Voltage L1 ⋯</div>
             <div class="stat-val" id="power-v1">—</div>
           </div>
-          <div class="stat">
-            <div class="stat-label">Voltage L2</div>
+          <div class="stat" style="cursor:pointer" onclick="showPhaseInfo('L2')" title="Click to see L2 circuits">
+            <div class="stat-label">Voltage L2 ⋯</div>
             <div class="stat-val" id="power-v2">—</div>
           </div>
-          <div class="stat">
-            <div class="stat-label">Voltage L3</div>
+          <div class="stat" style="cursor:pointer" onclick="showPhaseInfo('L3')" title="Click to see L3 circuits">
+            <div class="stat-label">Voltage L3 ⋯</div>
             <div class="stat-val" id="power-v3">—</div>
           </div>
           <div class="stat">
@@ -581,11 +581,33 @@
       </div>
     </div>
 
+    <!-- Phase info modal -->
+    <div id="phase-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);align-items:center;justify-content:center">
+      <div style="background:var(--panel);border:1px solid var(--border2);border-radius:16px;padding:24px;max-width:500px;width:calc(100% - 40px);max-height:80vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <span style="font-size:14px;font-weight:600" id="phase-modal-title">Phase L1</span>
+          <button id="phase-modal-close" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:0 4px">✕</button>
+        </div>
+        <div id="phase-modal-content">Loading...</div>
+      </div>
+    </div>
+
     <!-- Room sensors -->
     <div id="room-sensors-section" style="display:none">
       <div class="section-label">Room sensors</div>
       <div id="room-sensors-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px,1fr)); gap:14px">
         <!-- populated by JS -->
+      </div>
+    </div>
+
+    <!-- Phase info modal -->
+    <div id="phase-modal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);align-items:center;justify-content:center">
+      <div style="background:var(--panel);border:1px solid var(--border2);border-radius:16px;padding:24px;max-width:500px;width:calc(100% - 40px);max-height:80vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <span style="font-size:14px;font-weight:600" id="phase-modal-title">Phase L1</span>
+          <button id="phase-modal-close" style="background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;padding:0 4px">✕</button>
+        </div>
+        <div id="phase-modal-content">Loading...</div>
       </div>
     </div>
 
@@ -1717,6 +1739,59 @@ el('miner-toggle').addEventListener('change', async () => {
     setText('miner-manual-status', 'error');
     console.error(e);
   }
+});
+
+// ── Phase info modal ─────────────────────────────────────────────────────────
+async function showPhaseInfo(phase) {
+  const modal   = el('phase-modal');
+  const title   = el('phase-modal-title');
+  const content = el('phase-modal-content');
+
+  title.textContent = `Phase ${phase} — circuits`;
+  content.innerHTML = '<div style="color:var(--muted);font-size:13px">Loading...</div>';
+  modal.style.display = 'flex';
+
+  try {
+    const res  = await fetch(`${API}/api/elcentral/phase/${phase}`);
+    const data = await res.json();
+    const circuits = data.circuits || [];
+
+    if (!circuits.length) {
+      content.innerHTML = '<div style="color:var(--muted)">No circuits found for this phase.</div>';
+      return;
+    }
+
+    // Group: 3-phase circuits first, then single-phase
+    const three = circuits.filter(c => c.three_phase);
+    const single = circuits.filter(c => !c.three_phase);
+
+    function circuitRow(c) {
+      const fuse = c.fuse_rating_A ? `${c.fuse_rating_A}A` : '';
+      const wire = c.area_mm2 ? `${c.area_mm2}mm²` : '';
+      const meta = [fuse, wire].filter(Boolean).join(' / ');
+      const badge3 = c.three_phase
+        ? '<span style="font-size:9px;padding:1px 5px;border-radius:8px;background:rgba(91,143,255,0.2);color:var(--accent3);margin-left:6px">3-fas</span>'
+        : '';
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div>
+          <span style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-right:8px">G${c.group}</span>
+          <span style="font-size:13px">${c.description}</span>${badge3}
+        </div>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap;margin-left:12px">${meta}</span>
+      </div>`;
+    }
+
+    content.innerHTML = circuits.map(circuitRow).join('');
+  } catch(e) {
+    content.innerHTML = `<div style="color:var(--danger)">Could not load circuit data: ${e}</div>`;
+  }
+}
+
+el('phase-modal-close').addEventListener('click', () => {
+  el('phase-modal').style.display = 'none';
+});
+el('phase-modal').addEventListener('click', e => {
+  if (e.target === el('phase-modal')) el('phase-modal').style.display = 'none';
 });
 
 window.addEventListener('resize', drawSparkline);

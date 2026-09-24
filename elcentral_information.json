@@ -1,0 +1,345 @@
+{
+  "source": {
+    "description": "Elcentral med äldre diazed/proppsäkringar, dokumenterad från två uppladdade bilder.",
+    "nominal_lamp_voltage_from_label": "220 V",
+    "phase_assignment_basis": "De tre horisontella raderna tolkas som L1 (övre), L2 (mellersta), L3 (nedre). Detta stöds av att 3-fasgrupperna 6, 7, 8, 9, 20 och 21 återkommer en gång i varje rad.",
+    "phase_assignment_confidence": "high"
+  },
+  "panel": {
+    "type": "Diazed screw-fuse distribution board",
+    "circuits": [
+      {
+        "group": 1,
+        "description": "BEL ENTRE WC TRAPPA Y-BEL ENTRE KLK NP",
+        "phase": "L1",
+        "phases": [
+          "L1"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": ""
+      },
+      {
+        "group": 2,
+        "description": "BEL KÖK MATPLATS LAMPA OVAN DISKBÄNK",
+        "phase": "L1",
+        "phases": [
+          "L1"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": ""
+      },
+      {
+        "group": 3,
+        "description": "BEL TVÄTTSTUGA",
+        "phase": "L1",
+        "phases": [
+          "L1"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": ""
+      },
+      {
+        "group": 4,
+        "description": "DISKMASKIN",
+        "phase": "L1",
+        "phases": [
+          "L1"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": ""
+      },
+      {
+        "group": 5,
+        "description": "KYL",
+        "phase": "L1",
+        "phases": [
+          "L1"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": ""
+      },
+      {
+        "group": 6,
+        "description": "SPIS",
+        "phase": null,
+        "phases": [
+          "L1",
+          "L2",
+          "L3"
+        ],
+        "three_phase": true,
+        "fuse_rating_A": 16,
+        "area_mm2": 2.5,
+        "notes": "16 A anges i gruppförteckningen."
+      },
+      {
+        "group": 7,
+        "description": "VVB",
+        "phase": null,
+        "phases": [
+          "L1",
+          "L2",
+          "L3"
+        ],
+        "three_phase": true,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": "Handskrivet VVB. Gruppnumret 7 finns i alla tre faserader."
+      },
+      {
+        "group": 8,
+        "description": "TVÄTTMASKIN",
+        "phase": null,
+        "phases": [
+          "L1",
+          "L2",
+          "L3"
+        ],
+        "three_phase": true,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": "Gruppnumret 8 finns i alla tre faserader."
+      },
+      {
+        "group": 9,
+        "description": "Mikro/Ugn",
+        "phase": null,
+        "phases": [
+          "L1",
+          "L2",
+          "L3"
+        ],
+        "three_phase": true,
+        "fuse_rating_A": 10,
+        "area_mm2": 2.5,
+        "notes": "Handskrivet 'Mikro/Ugn'. 10 A och 2,5 mm² är handskrivet i förteckningen."
+      },
+      {
+        "group": 10,
+        "description": "BEL SOVRUM NP",
+        "phase": "L2",
+        "phases": [
+          "L2"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": ""
+      },
+      {
+        "group": 11,
+        "description": "BEL FÖRRÅD GILLESTUGA",
+        "phase": "L2",
+        "phases": [
+          "L2"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": ""
+      },
+      {
+        "group": 12,
+        "description": "BEL BADRUM HALL Y-BEL UTTAG BALKONG",
+        "phase": "L2",
+        "phases": [
+          "L2"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": ""
+      },
+      {
+        "group": 13,
+        "description": "UTTAG TVÄTTSTUGA",
+        "phase": "L2",
+        "phases": [
+          "L2"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": ""
+      },
+      {
+        "group": 14,
+        "description": "FRYS",
+        "phase": "L2",
+        "phases": [
+          "L2"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": ""
+      },
+      {
+        "group": 15,
+        "description": "BEL V-RUM Y-BEL V-RUM UTTAG GILLESTUGA",
+        "phase": "L3",
+        "phases": [
+          "L3"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": ""
+      },
+      {
+        "group": 16,
+        "description": "BEL 2 ST SOVRUM KLK ÖP",
+        "phase": "L3",
+        "phases": [
+          "L3"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": ""
+      },
+      {
+        "group": 17,
+        "description": "FLAKT",
+        "phase": "L3",
+        "phases": [
+          "L3"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": ""
+      },
+      {
+        "group": 18,
+        "description": "TORKSKÅP",
+        "phase": "L3",
+        "phases": [
+          "L3"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": "Texten är delvis överstruken i förteckningen."
+      },
+      {
+        "group": 19,
+        "description": "Ej tydligt specificerad på gruppförteckningen",
+        "phase": "L1",
+        "phases": [
+          "L1"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": 16,
+        "area_mm2": 2.5,
+        "notes": "Grupp 19 sitter i övre fasraden. 16 A och 2,5 mm² anges i förteckningen."
+      },
+      {
+        "group": 20,
+        "description": "VÄRME NP",
+        "phase": null,
+        "phases": [
+          "L1",
+          "L2",
+          "L3"
+        ],
+        "three_phase": true,
+        "fuse_rating_A": 16,
+        "area_mm2": 2.5,
+        "notes": "16 A och 2,5 mm² anges. Grupp 20 finns i alla tre faserader."
+      },
+      {
+        "group": 21,
+        "description": "VÄRME ÖP",
+        "phase": null,
+        "phases": [
+          "L1",
+          "L2",
+          "L3"
+        ],
+        "three_phase": true,
+        "fuse_rating_A": 16,
+        "area_mm2": 2.5,
+        "notes": "16 A och 2,5 mm² anges. Grupp 21 finns i alla tre faserader."
+      },
+      {
+        "group": 22,
+        "description": "Ej specificerad",
+        "phase": "L2",
+        "phases": [
+          "L2"
+        ],
+        "three_phase": false,
+        "fuse_rating_A": null,
+        "area_mm2": null,
+        "notes": "Grupp 22 syns endast i mellersta fasraden."
+      }
+    ]
+  },
+  "phase_rows": {
+    "L1": {
+      "row": "upper",
+      "groups": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        19,
+        20,
+        21
+      ]
+    },
+    "L2": {
+      "row": "middle",
+      "groups": [
+        10,
+        11,
+        12,
+        13,
+        14,
+        6,
+        7,
+        8,
+        9,
+        22,
+        20,
+        21
+      ]
+    },
+    "L3": {
+      "row": "lower",
+      "groups": [
+        15,
+        16,
+        17,
+        18,
+        6,
+        7,
+        8,
+        9,
+        20,
+        21
+      ]
+    }
+  },
+  "important_uncertainties": [
+    "Fasindelningen L1/L2/L3 är en tolkning av centralens layout och bör verifieras mot mätning/inkoppling innan den används för styrning.",
+    "Säkringsstorlek för grupper där den inte uttryckligen står i gruppförteckningen har inte gissats.",
+    "Att samma gruppnummer förekommer i alla tre rader används som indikation på 3-fas, men elektrisk 3-fasinkoppling bör verifieras innan arbete utförs."
+  ]
+}
