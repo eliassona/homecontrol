@@ -214,3 +214,7 @@ async def dashboard():
 @app.get("/simple")
 async def simple_dashboard():
     return FileResponse("static/simple.html")
+
+@app.get("/sasha")
+async def sasha_dashboard():
+    return FileResponse("static/sasha.html")
