@@ -1747,7 +1747,22 @@ async function showPhaseInfo(phase) {
   const title   = el('phase-modal-title');
   const content = el('phase-modal-content');
 
-  title.textContent = `Phase ${phase} — circuits`;
+  // Get live phase data from last snapshot
+  const meter = window._lastDevices && window._lastDevices.smart_meter;
+  const phaseNum = phase.replace('L','').toLowerCase();
+  const voltage = meter && meter[`voltage_${phaseNum}_v`];
+  const current = meter && meter[`current_${phaseNum}_a`];
+  const powerW  = meter && meter[`power_l${phaseNum}_w`];
+
+  let phaseInfo = phase;
+  if (voltage || current) {
+    const parts = [];
+    if (voltage) parts.push(`${voltage.toFixed(1)} V`);
+    if (current) parts.push(`${current.toFixed(1)} A`);
+    if (powerW)  parts.push(`${powerW} W`);
+    phaseInfo = `${phase} — ${parts.join(' / ')}`;
+  }
+  title.textContent = `${phaseInfo} — circuits`;
   content.innerHTML = '<div style="color:var(--muted);font-size:13px">Loading...</div>';
   modal.style.display = 'flex';
 
