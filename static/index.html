@@ -1750,8 +1750,8 @@ async function showPhaseInfo(phase) {
   // Get live phase data from last snapshot
   const meter = window._lastDevices && window._lastDevices.smart_meter;
   const phaseNum = phase.replace('L','').toLowerCase();
-  const voltage = meter && meter[`voltage_${phaseNum}_v`];
-  const current = meter && meter[`current_${phaseNum}_a`];
+  const voltage = meter && meter[`voltage_l${phaseNum}_v`];
+  const current = meter && meter[`current_l${phaseNum}_a`];
   const powerW  = meter && meter[`power_l${phaseNum}_w`];
 
   let phaseInfo = phase;
