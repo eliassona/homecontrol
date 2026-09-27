@@ -92,7 +92,7 @@
           "L3"
         ],
         "three_phase": true,
-        "fuse_rating_A": null,
+        "fuse_rating_A": 10,
         "area_mm2": null,
         "notes": "Handskrivet VVB. Gruppnumret 7 finns i alla tre faserader."
       },
