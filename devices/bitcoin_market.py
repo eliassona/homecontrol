@@ -38,22 +38,32 @@ def _fetch_json(url: str) -> dict:
 
 
 def _fetch_market_data() -> dict:
-    # BTC price in SEK — CoinGecko free tier
-    price_data = _fetch_json(
-        "https://api.coingecko.com/api/v3/simple/price"
-        "?ids=bitcoin&vs_currencies=sek,usd&include_24hr_change=true"
-    )
-    btc_sek = price_data["bitcoin"]["sek"]
-    btc_usd = price_data["bitcoin"]["usd"]
-    change_24h = price_data["bitcoin"].get("sek_24h_change", 0)
+    # BTC price — mempool.space (USD only, no SEK natively)
+    price_raw  = _fetch_json("https://mempool.space/api/v1/prices")
+    btc_usd    = float(price_raw.get("USD", 0))
+
+    # USD → SEK exchange rate — Frankfurter (free, no key, ECB data)
+    fx_data    = _fetch_json("https://api.frankfurter.app/latest?from=USD&to=SEK")
+    usd_sek    = float(fx_data.get("rates", {}).get("SEK", 10.5))
+    btc_sek    = round(btc_usd * usd_sek, 0)
+
+    # 24h change — mempool.space historical price
+    try:
+        hist = _fetch_json("https://mempool.space/api/v1/historical-price?currency=USD&timestamp=86400")
+        prices = hist.get("prices", [])
+        if prices:
+            btc_usd_24h = float(prices[-1].get("USD", btc_usd))
+            change_24h  = round((btc_usd - btc_usd_24h) / btc_usd_24h * 100, 2) if btc_usd_24h else 0
+        else:
+            change_24h = 0
+    except Exception:
+        change_24h = 0
 
     # Network difficulty + hashrate — mempool.space
     diff_data  = _fetch_json("https://mempool.space/api/v1/difficulty-adjustment")
-    # Current network hashrate in H/s from blockchain.info (mempool doesn't expose it directly)
     stats_data = _fetch_json("https://blockchain.info/stats?format=json")
-    # hash_rate from blockchain.info is in GH/s
     network_gh = stats_data.get("hash_rate", 0)
-    network_th = network_gh / 1000   # convert GH/s → TH/s
+    network_th = network_gh / 1000
 
     # Profitability calculation
     # blocks per day = 86400s / 600s avg block time = 144
