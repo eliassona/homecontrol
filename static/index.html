@@ -623,6 +623,12 @@
       <div id="lights-grid" class="cards"></div>
     </div>
 
+    <!-- Kitchen appliances (Home Assistant) -->
+    <div id="appliances-section" style="display:none">
+      <div class="section-label">Kitchen appliances</div>
+      <div id="appliances-grid" class="cards" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))"></div>
+    </div>
+
     <!-- Coming soon -->
     <div>
       <div class="section-label">Coming soon</div>
@@ -1103,6 +1109,189 @@ async function setBulbCt(deviceId, ct) {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({command: 'set', params: {ct: v}})
+    });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// ── Kitchen appliances (Home Assistant) ──────────────────────────────────────
+const haPending = {}; // key: `${appId}:${role}` → { value, until }
+const HA_PENDING_MS = 45_000;
+
+function setHaPending(appId, role, value) {
+  haPending[`${appId}:${role}`] = { value, until: Date.now() + HA_PENDING_MS };
+}
+
+function getHaPending(appId, role) {
+  const p = haPending[`${appId}:${role}`];
+  if (!p) return null;
+  if (Date.now() > p.until) { delete haPending[`${appId}:${role}`]; return null; }
+  return p.value;
+}
+
+function humanizeProg(opt, labels) {
+  if (!opt || opt === 'unknown' || opt === 'unavailable') return '—';
+  if (labels && labels[opt]) return labels[opt];
+  return String(opt)
+    .replace(/^dishcare_dishwasher_program_/, '')
+    .replace(/^cooking_oven_program_heating_mode_/, '')
+    .replace(/^cooking_oven_program_/, '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function opStateColor(state) {
+  if (!state) return 'var(--muted)';
+  if (state === 'run') return 'var(--accent2)';
+  if (state === 'ready') return 'var(--accent)';
+  if (state === 'error' || state === 'actionrequired') return 'var(--danger)';
+  if (state === 'finished') return 'var(--accent3)';
+  return 'var(--muted)';
+}
+
+function renderAppliances(haDevice) {
+  const section = el('appliances-section');
+  const grid = el('appliances-grid');
+  if (!haDevice || !haDevice.online || !haDevice.appliances) {
+    if (section) section.style.display = 'none';
+    return;
+  }
+  section.style.display = '';
+  const apps = Object.values(haDevice.appliances);
+  if (!apps.length) { section.style.display = 'none'; return; }
+
+  grid.innerHTML = apps.map(a => {
+    const power = getHaPending(a.id, 'power') ?? a.power;
+    const childLock = getHaPending(a.id, 'child_lock') ?? a.child_lock;
+    const op = a.operation_state || '—';
+    const door = a.door;
+    const prog = a.progress;
+    const temp = a.temperature;
+    const selected = getHaPending(a.id, 'selected_programme') ?? a.selected_programme;
+    const labels = (a.option_labels && a.option_labels.selected_programme) || {};
+    const opts = (a.options && a.options.selected_programme) || [];
+    const online = a.online !== false;
+    const accent = power ? 'var(--accent)' : 'var(--border2)';
+
+    // Extra switches (dishwasher options etc.)
+    const extraSwitches = [];
+    for (const role of ['intensive_zone', 'vario_speed', 'half_load', 'silence']) {
+      if (a[role] == null && !(a.entities && a.entities[role])) continue;
+      const val = getHaPending(a.id, role) ?? a[role];
+      if (val === null || val === undefined) continue; // unavailable
+      const label = role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      extraSwitches.push({ role, label, val: !!val });
+    }
+
+    const subParts = [];
+    if (door) subParts.push('Door ' + door);
+    if (temp != null) subParts.push(Math.round(temp) + '°C');
+    if (prog != null) subParts.push(Math.round(prog) + '%');
+    if (a.remote_control === false) subParts.push('no remote');
+
+    return `<div class="card ${online ? '' : 'offline'}" style="--card-accent:${accent}">
+      <div class="card-label" style="display:flex;justify-content:space-between;align-items:center">
+        <span>${a.name}</span>
+        <label class="toggle" title="Power" style="margin:0">
+          <input type="checkbox" ${power ? 'checked' : ''} ${!online ? 'disabled' : ''}
+            onchange="haToggle('${a.id}','power',this.checked,this)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="card-value" style="color:${opStateColor(op)};margin-top:8px;font-size:20px">
+        ${op === '—' ? (power ? 'On' : 'Off') : op}
+      </div>
+      <div class="card-sub">${subParts.join(' · ') || (online ? '' : 'offline')}</div>
+      ${opts.length ? `
+        <div style="margin-top:10px">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:4px">Programme</div>
+          <select style="width:100%;background:var(--surface);color:var(--text);border:1px solid var(--border2);
+            border-radius:8px;padding:6px 8px;font-family:var(--mono);font-size:12px"
+            ${!online || !power ? 'disabled' : ''}
+            onchange="haSetOption('${a.id}','selected_programme',this.value)">
+            ${opts.map(o => `<option value="${o}" ${o === selected ? 'selected' : ''}>${humanizeProg(o, labels)}</option>`).join('')}
+          </select>
+        </div>` : ''}
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center">
+        ${childLock != null ? `
+          <label class="toggle-wrap" title="Child lock" style="gap:6px">
+            <span class="toggle-label">LOCK</span>
+            <label class="toggle" style="margin:0">
+              <input type="checkbox" ${childLock ? 'checked' : ''} ${!online ? 'disabled' : ''}
+                onchange="haToggle('${a.id}','child_lock',this.checked,this)">
+              <span class="toggle-slider"></span>
+            </label>
+          </label>` : ''}
+        ${extraSwitches.map(s => `
+          <label class="toggle-wrap" title="${s.label}" style="gap:6px">
+            <span class="toggle-label">${s.label.split(' ')[0].toUpperCase()}</span>
+            <label class="toggle" style="margin:0">
+              <input type="checkbox" ${s.val ? 'checked' : ''} ${!online ? 'disabled' : ''}
+                onchange="haToggle('${a.id}','${s.role}',this.checked,this)">
+              <span class="toggle-slider"></span>
+            </label>
+          </label>`).join('')}
+        ${a.entities && a.entities.stop ? `
+          <button type="button" style="font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:8px;
+            border:1px solid var(--border2);background:rgba(255,91,91,0.12);color:var(--danger);cursor:pointer"
+            ${!online ? 'disabled' : ''} onclick="haPress('${a.id}','stop')">STOP</button>` : ''}
+        ${a.entities && a.entities.resume ? `
+          <button type="button" style="font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:8px;
+            border:1px solid var(--border2);background:rgba(47,214,160,0.12);color:var(--accent2);cursor:pointer"
+            ${!online ? 'disabled' : ''} onclick="haPress('${a.id}','resume')">RESUME</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function haToggle(appId, role, turnOn, checkbox) {
+  setHaPending(appId, role, turnOn);
+  if (checkbox) checkbox.disabled = true;
+  try {
+    await fetch(`${API}/api/devices/home_assistant/command`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        command: turnOn ? 'on' : 'off',
+        params: { appliance: appId, role }
+      })
+    });
+  } catch (e) {
+    setHaPending(appId, role, !turnOn);
+    if (checkbox) checkbox.checked = !turnOn;
+    console.error(e);
+  } finally {
+    if (checkbox) checkbox.disabled = false;
+    if (window._lastDevices?.home_assistant) renderAppliances(window._lastDevices.home_assistant);
+  }
+}
+
+async function haSetOption(appId, role, option) {
+  setHaPending(appId, role, option);
+  try {
+    await fetch(`${API}/api/devices/home_assistant/command`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        command: 'set_option',
+        params: { appliance: appId, role, option }
+      })
+    });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function haPress(appId, role) {
+  try {
+    await fetch(`${API}/api/devices/home_assistant/command`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        command: 'press',
+        params: { appliance: appId, role }
+      })
     });
   } catch (e) {
     console.error(e);
@@ -1646,6 +1835,7 @@ async function poll() {
     window._lastDevices = devices;
     renderLights(devices);
     renderRoomSensors(devices);
+    if (devices.home_assistant) renderAppliances(devices.home_assistant);
     renderTeslaCar(devices.tesla_car);
     renderTesla(devices.tesla_charger);
     if (devices.smart_meter)       renderPower(devices.smart_meter);

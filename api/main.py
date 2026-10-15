@@ -29,6 +29,7 @@ from devices.tesla_wall_connector import TeslaWallConnector
 from devices.tesla_car import TeslaCar
 from devices.bitcoin_market import BitcoinMarket
 from devices.shelly_bulb import ShellyBulb
+from devices.home_assistant import HomeAssistant
 from api.automator import Automator
 
 logging.basicConfig(
@@ -65,6 +66,7 @@ DEVICE_CLASSES = {
     "tesla_car":            TeslaCar,
     "bitcoin_market":       BitcoinMarket,
     "shelly_bulb":          ShellyBulb,
+    "home_assistant":       HomeAssistant,
     # "room_sensor":   RoomSensor,
     # "power_meter":   PowerMeter,
     # "tesla_charger": TeslaCharger,
@@ -200,7 +202,7 @@ async def get_config():
     device_cfg = {}
     for k, v in cfg.get("devices", {}).items():
         device_cfg[k] = {dk: dv for dk, dv in v.items()
-                         if dk not in ("password", "username", "token_file", "cookie_file")}
+                         if dk not in ("password", "username", "token", "token_file", "cookie_file")}
     return {
         "dashboard":  cfg.get("dashboard", {}),
         "devices":    device_cfg,
