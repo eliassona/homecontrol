@@ -917,23 +917,72 @@ function renderRoomSensors(devices) {
 
 // ── Render Tesla car ─────────────────────────────────────────────────────────
 // ── Render lights ────────────────────────────────────────────────────────────
+// Optimistic overrides so the UI doesn't snap back while the backend re-polls the bulb
+const lightPending = {}; // id -> { on?, brightness?, ct?, until }
+const LIGHT_PENDING_MS = 45_000;
+
+function setLightPending(deviceId, patch) {
+  const prev = lightPending[deviceId] || {};
+  lightPending[deviceId] = {
+    ...prev,
+    ...patch,
+    until: Date.now() + LIGHT_PENDING_MS,
+  };
+}
+
+function clearLightPendingIfMatched(deviceId, d) {
+  const p = lightPending[deviceId];
+  if (!p) return;
+  if (Date.now() > p.until) { delete lightPending[deviceId]; return; }
+  const onMatch  = p.on == null || !!d.on === !!p.on;
+  const brMatch  = p.brightness == null || Number(d.brightness) === Number(p.brightness);
+  const ctMatch  = p.ct == null || Number(d.ct) === Number(p.ct);
+  if (onMatch && brMatch && ctMatch) delete lightPending[deviceId];
+}
+
+function mergeLightState(id, d) {
+  clearLightPendingIfMatched(id, d);
+  const p = lightPending[id];
+  if (!p || Date.now() > p.until) return d;
+  return {
+    ...d,
+    on:         p.on != null ? p.on : d.on,
+    brightness: p.brightness != null ? p.brightness : d.brightness,
+    ct:         p.ct != null ? p.ct : d.ct,
+  };
+}
+
+function ctLabel(ct) {
+  if (ct == null) return '';
+  if (ct <= 3000) return 'warm';
+  if (ct >= 5000) return 'cool';
+  return 'neutral';
+}
+
 function renderLights(devices) {
   const lights = Object.entries(devices)
     .filter(([, d]) => d.device_type === 'light' || d.bulb_name != null)
-    .map(([id, d]) => ({id, ...d}));
+    .map(([id, d]) => ({id, ...mergeLightState(id, d)}));
 
   const section = el('lights-section');
   const grid    = el('lights-grid');
   if (!lights.length) { section.style.display = 'none'; return; }
   section.style.display = '';
 
+  // Preserve focus/drag on range inputs across re-renders
+  const active = document.activeElement;
+  const activeId = active && active.dataset && active.dataset.lightCtrl
+    ? active.dataset.lightCtrl + ':' + active.dataset.lightId
+    : null;
+  const activeVal = active && active.type === 'range' ? active.value : null;
+
   grid.innerHTML = lights.map(d => {
     const online = d.online;
-    const isOn   = d.on;
+    const isOn   = !!d.on;
     const name   = d.bulb_name || d.id;
-    const br     = d.brightness;
-    const ct     = d.ct;
-    const ctWarm = ct <= 3000 ? 'warm' : ct >= 5000 ? 'cool' : 'neutral';
+    const br     = d.brightness != null ? d.brightness : 50;
+    const ct     = d.ct != null ? d.ct : 2700;
+    const warm   = ctLabel(ct);
     const onCol  = isOn ? 'var(--accent)' : 'var(--muted)';
 
     return `<div class="card ${online ? '' : 'offline'}" style="--card-accent:${isOn ? 'var(--accent)' : 'var(--border2)'}">
@@ -945,15 +994,52 @@ function renderLights(devices) {
           <span class="toggle-slider"></span>
         </label>
       </div>
-      <div class="card-value" style="color:${onCol};margin-top:8px">${isOn ? br + '%' : 'Off'}</div>
-      <div class="card-sub">${isOn && ct ? ct + 'K · ' + ctWarm : ''}${d.power_w != null ? ' · ' + d.power_w.toFixed(1) + 'W' : ''}</div>
-      ${isOn ? `<input type="range" min="1" max="100" value="${br}" style="width:100%;margin-top:8px;accent-color:var(--accent)"
-        onchange="setBulbBrightness('${d.id}', this.value)">` : ''}
+      <div class="card-value" id="light-val-${d.id}" style="color:${onCol};margin-top:8px">${isOn ? br + '%' : 'Off'}</div>
+      <div class="card-sub" id="light-sub-${d.id}">${isOn && ct ? ct + 'K · ' + warm : ''}${d.power_w != null ? ' · ' + Number(d.power_w).toFixed(1) + 'W' : ''}</div>
+      ${isOn && online ? `
+        <div style="margin-top:10px">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:2px">
+            <span>Brightness</span><span id="light-br-lbl-${d.id}">${br}%</span>
+          </div>
+          <input type="range" min="1" max="100" value="${br}"
+            data-light-ctrl="br" data-light-id="${d.id}"
+            style="width:100%;accent-color:var(--accent)"
+            oninput="onBulbBrightnessInput('${d.id}', this.value)"
+            onchange="setBulbBrightness('${d.id}', this.value)">
+        </div>
+        <div style="margin-top:10px">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:2px">
+            <span>Warm</span><span id="light-ct-lbl-${d.id}">${ct}K</span><span>Cool</span>
+          </div>
+          <input type="range" min="2700" max="6500" step="100" value="${ct}"
+            data-light-ctrl="ct" data-light-id="${d.id}"
+            style="width:100%;accent-color:var(--accent3)"
+            oninput="onBulbCtInput('${d.id}', this.value)"
+            onchange="setBulbCt('${d.id}', this.value)">
+        </div>` : ''}
     </div>`;
   }).join('');
+
+  // Restore slider focus/value if user was dragging during a poll
+  if (activeId) {
+    const [ctrl, id] = activeId.split(':');
+    const sel = grid.querySelector(`input[data-light-ctrl="${ctrl}"][data-light-id="${id}"]`);
+    if (sel) {
+      if (activeVal != null) sel.value = activeVal;
+      sel.focus();
+    }
+  }
 }
 
 async function toggleBulb(deviceId, turnOn, checkbox) {
+  setLightPending(deviceId, { on: turnOn });
+  // Optimistic UI: update value/sub immediately without waiting for poll
+  const valEl = el('light-val-' + deviceId);
+  const subEl = el('light-sub-' + deviceId);
+  if (valEl) {
+    valEl.textContent = turnOn ? ((lightPending[deviceId].brightness ?? window._lastDevices?.[deviceId]?.brightness ?? 50) + '%') : 'Off';
+    valEl.style.color = turnOn ? 'var(--accent)' : 'var(--muted)';
+  }
   checkbox.disabled = true;
   try {
     await fetch(`${API}/api/devices/${deviceId}/command`, {
@@ -961,20 +1047,66 @@ async function toggleBulb(deviceId, turnOn, checkbox) {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({command: turnOn ? 'on' : 'off', params: {}})
     });
+    // Force a quick re-render so sliders appear/disappear
+    if (window._lastDevices) renderLights(window._lastDevices);
   } catch(e) {
     checkbox.checked = !turnOn;
+    setLightPending(deviceId, { on: !turnOn });
+    if (window._lastDevices) renderLights(window._lastDevices);
     console.error(e);
   } finally {
     checkbox.disabled = false;
   }
 }
 
+function onBulbBrightnessInput(deviceId, brightness) {
+  const v = parseInt(brightness, 10);
+  setLightPending(deviceId, { brightness: v, on: true });
+  const lbl = el('light-br-lbl-' + deviceId);
+  if (lbl) lbl.textContent = v + '%';
+  const valEl = el('light-val-' + deviceId);
+  if (valEl) { valEl.textContent = v + '%'; valEl.style.color = 'var(--accent)'; }
+}
+
 async function setBulbBrightness(deviceId, brightness) {
-  await fetch(`${API}/api/devices/${deviceId}/command`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({command: 'set', params: {brightness: parseInt(brightness)}})
-  });
+  const v = parseInt(brightness, 10);
+  setLightPending(deviceId, { brightness: v, on: true });
+  try {
+    await fetch(`${API}/api/devices/${deviceId}/command`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({command: 'set', params: {brightness: v}})
+    });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function onBulbCtInput(deviceId, ct) {
+  const v = parseInt(ct, 10);
+  setLightPending(deviceId, { ct: v, on: true });
+  const lbl = el('light-ct-lbl-' + deviceId);
+  if (lbl) lbl.textContent = v + 'K';
+  const subEl = el('light-sub-' + deviceId);
+  if (subEl) {
+    const warm = ctLabel(v);
+    const pw = window._lastDevices?.[deviceId]?.power_w;
+    subEl.textContent = v + 'K · ' + warm + (pw != null ? ' · ' + Number(pw).toFixed(1) + 'W' : '');
+  }
+}
+
+async function setBulbCt(deviceId, ct) {
+  const v = parseInt(ct, 10);
+  setLightPending(deviceId, { ct: v, on: true });
+  try {
+    await fetch(`${API}/api/devices/${deviceId}/command`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({command: 'set', params: {ct: v}})
+    });
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 function renderTeslaCar(d) {
