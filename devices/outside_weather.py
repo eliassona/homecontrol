@@ -95,6 +95,7 @@ class OutsideWeather(BaseDevice):
             ]),
             "wind_speed_unit": "ms",
             "timezone":     "Europe/Stockholm",
+            "daily":        "sunset,sunrise",
         })
         return f"https://api.open-meteo.com/v1/forecast?{params}"
 
@@ -131,4 +132,6 @@ class OutsideWeather(BaseDevice):
             "location_name":      self.location_name,
             "latitude":           self.latitude,
             "longitude":          self.longitude,
+            "sunset":             (data.get("daily", {}).get("sunset", [None])[0]),
+            "sunrise":            (data.get("daily", {}).get("sunrise", [None])[0]),
         }

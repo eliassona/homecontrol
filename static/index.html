@@ -617,6 +617,12 @@
       <div id="room-sensors-grid" class="cards"></div>
     </div>
 
+    <!-- Lights -->
+    <div id="lights-section" style="display:none">
+      <div class="section-label">Lights</div>
+      <div id="lights-grid" class="cards"></div>
+    </div>
+
     <!-- Coming soon -->
     <div>
       <div class="section-label">Coming soon</div>
@@ -910,6 +916,67 @@ function renderRoomSensors(devices) {
 }
 
 // ── Render Tesla car ─────────────────────────────────────────────────────────
+// ── Render lights ────────────────────────────────────────────────────────────
+function renderLights(devices) {
+  const lights = Object.entries(devices)
+    .filter(([, d]) => d.device_type === 'light' || d.bulb_name != null)
+    .map(([id, d]) => ({id, ...d}));
+
+  const section = el('lights-section');
+  const grid    = el('lights-grid');
+  if (!lights.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+
+  grid.innerHTML = lights.map(d => {
+    const online = d.online;
+    const isOn   = d.on;
+    const name   = d.bulb_name || d.id;
+    const br     = d.brightness;
+    const ct     = d.ct;
+    const ctWarm = ct <= 3000 ? 'warm' : ct >= 5000 ? 'cool' : 'neutral';
+    const onCol  = isOn ? 'var(--accent)' : 'var(--muted)';
+
+    return `<div class="card ${online ? '' : 'offline'}" style="--card-accent:${isOn ? 'var(--accent)' : 'var(--border2)'}">
+      <div class="card-label" style="display:flex;justify-content:space-between;align-items:center">
+        <span>${name}</span>
+        <label class="toggle" title="Toggle ${name}" style="margin:0">
+          <input type="checkbox" ${isOn ? 'checked' : ''} ${!online ? 'disabled' : ''}
+            onchange="toggleBulb('${d.id}', this.checked, this)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+      <div class="card-value" style="color:${onCol};margin-top:8px">${isOn ? br + '%' : 'Off'}</div>
+      <div class="card-sub">${isOn && ct ? ct + 'K · ' + ctWarm : ''}${d.power_w != null ? ' · ' + d.power_w.toFixed(1) + 'W' : ''}</div>
+      ${isOn ? `<input type="range" min="1" max="100" value="${br}" style="width:100%;margin-top:8px;accent-color:var(--accent)"
+        onchange="setBulbBrightness('${d.id}', this.value)">` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function toggleBulb(deviceId, turnOn, checkbox) {
+  checkbox.disabled = true;
+  try {
+    await fetch(`${API}/api/devices/${deviceId}/command`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({command: turnOn ? 'on' : 'off', params: {}})
+    });
+  } catch(e) {
+    checkbox.checked = !turnOn;
+    console.error(e);
+  } finally {
+    checkbox.disabled = false;
+  }
+}
+
+async function setBulbBrightness(deviceId, brightness) {
+  await fetch(`${API}/api/devices/${deviceId}/command`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({command: 'set', params: {brightness: parseInt(brightness)}})
+  });
+}
+
 function renderTeslaCar(d) {
   const section = el('tesla-car-section');
   if (!d || !d.online) { section.style.display = 'none'; return; }
@@ -1445,6 +1512,7 @@ async function poll() {
 
     const devices = data.devices || {};
     window._lastDevices = devices;
+    renderLights(devices);
     renderRoomSensors(devices);
     renderTeslaCar(devices.tesla_car);
     renderTesla(devices.tesla_charger);

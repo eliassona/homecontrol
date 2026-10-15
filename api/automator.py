@@ -50,12 +50,25 @@ class BaseRule:
     async def _loop(self):
         # Wait for devices to complete their first poll before evaluating
         await asyncio.sleep(30)
+
+        # Run immediately on startup
+        try:
+            await self._tick()
+        except Exception as e:
+            log.error(f"[{self.name}] Startup evaluation error: {e}")
+
+        # Then check every 5 minutes — cheap since it reads cached snapshots
+        # Full hourly interval is kept but we re-evaluate frequently so
+        # time window transitions and hold→resume are never missed
+        CHECK_INTERVAL = 300   # 5 minutes
+        elapsed = 0
         while True:
+            await asyncio.sleep(CHECK_INTERVAL)
+            elapsed += CHECK_INTERVAL
             try:
                 await self._tick()
             except Exception as e:
                 log.error(f"[{self.name}] Error: {e}")
-            await asyncio.sleep(self.interval_seconds)
 
     async def _tick(self):
         if getattr(self, '_manual', False):
@@ -65,9 +78,19 @@ class BaseRule:
         if decision is None:
             log.info(f"[{self.name}] Dead zone — leaving state unchanged")
             return
+
+        # Throttle: don't act more often than interval_seconds to prevent toggling
+        now = datetime.now().timestamp()
+        last = getattr(self, '_last_action_ts', 0)
+        if decision == getattr(self, '_last_decision', None) and (now - last) < self.interval_seconds:
+            log.debug(f"[{self.name}] Same decision as last action, throttled")
+            return
+
         log.info(f"[{self.name}] → {'RUN' if decision else 'PAUSE'} "
                  f"at {datetime.now().strftime('%H:%M:%S')}")
         await self.apply(decision)
+        self._last_action_ts = now
+        self._last_decision  = decision
 
 
 # ── Shared miner apply logic ──────────────────────────────────────────────────
@@ -379,11 +402,112 @@ class TeslaChargeRule(BaseRule):
             log.error(f"[{self.name}] Failed to send command: {e}")
 
 
+# ── Bulb dusk rule ────────────────────────────────────────────────────────────
+
+class BulbDuskRule(BaseRule):
+    """
+    Turn a Shelly Duo Bulb on at sunset and off at a configured time.
+
+    Config keys:
+      bulb_device      device id in config (e.g. "living_room_bulb")
+      weather_device   "outside_weather" (default)
+      brightness       0-100 % when turning on (default: 80)
+      ct               color temperature in K (default: 2700 warm)
+      transition_ms    fade in/out time in ms (default: 3000)
+      off_hour         hour to turn off (default: 23)
+      off_minute       minute to turn off (default: 0)
+      interval_seconds check interval (default: 60)
+    """
+
+    name = "bulb_dusk_rule"
+
+    def __init__(self, registry, cfg: dict):
+        super().__init__(registry, cfg)
+        self.bulb_id       = cfg.get("bulb_device")
+        self.weather_id    = cfg.get("weather_device", "outside_weather")
+        self.brightness    = int(cfg.get("brightness",    80))
+        self.ct            = int(cfg.get("ct",          2700))
+        self.transition_ms = int(cfg.get("transition_ms", 3000))
+        self.off_hour      = int(cfg.get("off_hour",      23))
+        self.off_minute    = int(cfg.get("off_minute",     0))
+        self.interval_seconds = int(cfg.get("interval_seconds", 60))
+        self._turned_on_today  = False
+        self._turned_off_today = False
+        self._last_date        = None
+
+    async def evaluate(self) -> Optional[bool]:
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
+        now = _dt.now()
+        today = now.date().isoformat()
+
+        # Reset daily flags at midnight
+        if self._last_date != today:
+            self._turned_on_today  = False
+            self._turned_off_today = False
+            self._last_date = today
+
+        # ── Off time ─────────────────────────────────────────────────────────
+        if now.hour == self.off_hour and now.minute >= self.off_minute:
+            if not self._turned_off_today:
+                return False   # turn off
+            return None
+
+        # ── Sunset time ───────────────────────────────────────────────────────
+        weather = self.registry.get(self.weather_id)
+        if not weather:
+            return None
+
+        snap = weather.cached_snapshot()
+        sunset_str = snap.get("sunset")
+        if not sunset_str:
+            return None
+
+        try:
+            # sunset comes as "2026-06-15T21:32" in local time
+            sunset = _dt.fromisoformat(sunset_str)
+        except Exception:
+            return None
+
+        if now >= sunset and not self._turned_on_today and now.hour < self.off_hour:
+            return True   # turn on at sunset
+
+        return None   # hold
+
+    async def apply(self, should_run: bool):
+        bulb = self.registry.get(self.bulb_id)
+        if not bulb:
+            log.warning(f"[{self.name}] Bulb device '{self.bulb_id}' not found")
+            return
+
+        if should_run:
+            log.info(f"[{self.name}] 💡 Turning ON '{self.bulb_id}' at sunset "
+                     f"(brightness={self.brightness}%, ct={self.ct}K)")
+            try:
+                await bulb.command("on", {
+                    "brightness": self.brightness,
+                    "ct": self.ct,
+                    "transition": self.transition_ms,
+                })
+                self._turned_on_today = True
+            except Exception as e:
+                log.error(f"[{self.name}] Failed to turn on bulb: {e}")
+        else:
+            log.info(f"[{self.name}] 🌙 Turning OFF '{self.bulb_id}' at "
+                     f"{self.off_hour:02d}:{self.off_minute:02d}")
+            try:
+                await bulb.command("off", {"transition": self.transition_ms})
+                self._turned_off_today = True
+            except Exception as e:
+                log.error(f"[{self.name}] Failed to turn off bulb: {e}")
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
 
 RULE_CLASSES = {
     "miner_temp_price_rule": MinerTempPriceRule,
     "tesla_charge_rule":     TeslaChargeRule,
+    "bulb_dusk_rule":        BulbDuskRule,
 }
 
 

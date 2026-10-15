@@ -23,10 +23,12 @@ from devices.shelly_ht import ShellyHT
 from devices.tesla_wall_connector import TeslaWallConnector
 from devices.tesla_car import TeslaCar
 from devices.bitcoin_market import BitcoinMarket
+from devices.shelly_bulb import ShellyBulb
 from devices.shelly_ht import ShellyHT
 from devices.tesla_wall_connector import TeslaWallConnector
 from devices.tesla_car import TeslaCar
 from devices.bitcoin_market import BitcoinMarket
+from devices.shelly_bulb import ShellyBulb
 from api.automator import Automator
 
 logging.basicConfig(
@@ -57,10 +59,12 @@ DEVICE_CLASSES = {
     "tesla_wall_connector": TeslaWallConnector,
     "tesla_car":            TeslaCar,
     "bitcoin_market":       BitcoinMarket,
+    "shelly_bulb":          ShellyBulb,
     "shelly_ht":           ShellyHT,
     "tesla_wall_connector": TeslaWallConnector,
     "tesla_car":            TeslaCar,
     "bitcoin_market":       BitcoinMarket,
+    "shelly_bulb":          ShellyBulb,
     # "room_sensor":   RoomSensor,
     # "power_meter":   PowerMeter,
     # "tesla_charger": TeslaCharger,
