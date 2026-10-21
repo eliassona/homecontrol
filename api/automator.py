@@ -132,8 +132,8 @@ class MinerTempPriceRule(MinerRule):
 
     Logic (with hysteresis of `hys` öre on price, fixed ±1°C on temp):
 
-      RESUME when:  temp < temp_on   AND  price < day_avg - hys
-      PAUSE  when:  temp > temp_off  OR   price > day_avg + hys
+      RESUME when:  temp < temp_on   AND  price < max_price_ore
+      PAUSE  when:  temp > temp_off  OR   price >= max_price_ore
       HOLD   otherwise (dead zone — keep current state)
 
     Config keys (all optional, defaults shown):
@@ -142,7 +142,7 @@ class MinerTempPriceRule(MinerRule):
       price_device:      "electricity_price"
       temp_on:           20.0     °C  — resume threshold
       temp_off:          22.0     °C  — pause threshold
-      price_hys_ore:     20.0     öre — hysteresis band around daily average
+      max_price_ore:     50.0     öre — run only below this price
       interval_seconds:  3600
     """
 
@@ -155,7 +155,7 @@ class MinerTempPriceRule(MinerRule):
         self.verisure_id       = cfg.get("verisure_device",  "verisure")
         self.temp_on           = float(cfg.get("temp_on",          20.0))
         self.temp_off          = float(cfg.get("temp_off",         22.0))
-        self.price_hys         = float(cfg.get("price_hys_ore",    20.0))
+        self.max_price         = float(cfg.get("max_price_ore",    50.0))   # run only below this price
         self.indoor_sensor       = cfg.get("indoor_sensor")           # e.g. "Hall, Entré"
         self.indoor_temp_on      = float(cfg.get("indoor_temp_on",      22.0))
         self.indoor_temp_off     = float(cfg.get("indoor_temp_off",     24.0))
@@ -219,14 +219,10 @@ class MinerTempPriceRule(MinerRule):
 
         price_snap    = price_dev.cached_snapshot()
         price_now     = price_snap.get("price_now_ore")
-        price_avg     = price_snap.get("today_avg_ore")
 
-        if price_now is None or price_avg is None:
+        if price_now is None:
             log.warning(f"[{self.name}] No price data — holding state")
             return None
-
-        threshold_on  = price_avg - self.price_hys
-        threshold_off = price_avg + self.price_hys
 
         # ── Fetch indoor temperature (optional) ──────────────────────────────
         indoor_temp = None
@@ -242,8 +238,7 @@ class MinerTempPriceRule(MinerRule):
         log.info(
             f"[{self.name}] "
             f"outside={temp}°C  "
-            f"price={price_now:.1f} öre  avg={price_avg:.1f} öre  "
-            f"on<{threshold_on:.1f}  off>{threshold_off:.1f}"
+            f"price={price_now:.1f} öre  max={self.max_price:.1f} öre"
             + (f"  indoor={indoor_temp}°C" if indoor_temp is not None else "  indoor=n/a")
         )
 
@@ -253,8 +248,8 @@ class MinerTempPriceRule(MinerRule):
         outside_bad  = temp > self.temp_off
 
         #   Check price
-        price_good = price_now < threshold_on
-        price_bad  = price_now > threshold_off
+        price_good = price_now < self.max_price
+        price_bad  = price_now >= self.max_price
 
         #   Check indoor temp (only if sensor is configured)
         too_cold = False

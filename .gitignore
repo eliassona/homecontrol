@@ -4,3 +4,5 @@ venv
 .DS_Store
 verisure_cookie.pkl
 HA-states.json
+state.json
+**/__pycache__/

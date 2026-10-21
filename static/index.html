@@ -699,11 +699,6 @@ async function loadConfig() {
     const cfg = await res.json();
     const minerCfg = cfg?.devices?.s9_miner;
     if (minerCfg?.power_w) window._minerPowerW = minerCfg.power_w;
-    // Appliance quick-start shortcuts (config.json → devices.home_assistant.appliances[].shortcuts)
-    window._haShortcuts = {};
-    for (const ap of (cfg?.devices?.home_assistant?.appliances || [])) {
-      if (ap.shortcuts?.length) window._haShortcuts[ap.id] = ap.shortcuts;
-    }
   } catch (e) {}
 }
 
@@ -1123,7 +1118,6 @@ async function setBulbCt(deviceId, ct) {
 // ── Kitchen appliances (Home Assistant) ──────────────────────────────────────
 const haPending = {}; // key: `${appId}:${role}` → { value, until }
 const HA_PENDING_MS = 45_000;
-const haOpen = {};    // appId → options <details> open state (survives re-render)
 
 function setHaPending(appId, role, value) {
   haPending[`${appId}:${role}`] = { value, until: Date.now() + HA_PENDING_MS };
@@ -1136,34 +1130,6 @@ function getHaPending(appId, role) {
   return p.value;
 }
 
-// Roles the UI knows how to render. Any role you add to config.json that is
-// listed here shows up automatically; unknown/unavailable ones are skipped.
-const HA_SWITCH_ROLES = {
-  fast_preheat:   'Fast preheat',
-  intensive_zone: 'Intensive zone',
-  vario_speed:    'VarioSpeed',
-  half_load:      'Half load',
-  silence:        'Silence on demand',
-  brilliance_dry: 'Brilliance dry',
-  hygiene_plus:   'Hygiene+',
-  eco_dry:        'Eco dry',
-  extra_dry:      'Extra dry',
-};
-// HA number entities are in seconds for time values; `factor` converts to the displayed unit.
-const HA_NUMBER_ROLES = {
-  setpoint_temperature: { label: 'Target temp', unit: '°C',  factor: 1,  min: 30, max: 250,  step: 5,  def: 180 },
-  duration:             { label: 'Duration',    unit: 'min', factor: 60, min: 1,  max: 240,  step: 1,  def: 30  },
-  alarm_clock:          { label: 'Timer',       unit: 'min', factor: 60, min: 0,  max: 99,   step: 1,  def: 10  },
-  start_in:             { label: 'Delay start', unit: 'min', factor: 60, min: 0,  max: 1440, step: 30, def: 0   },
-};
-const HA_ALERT_ROLES = { rinse_aid_low: 'Rinse aid low', salt_low: 'Salt low' };
-const HA_STATE_LABELS = {
-  run: 'Running', ready: 'Ready', inactive: 'Idle', finished: 'Finished', pause: 'Paused',
-  delayedstart: 'Delayed start', actionrequired: 'Action required', error: 'Error', aborting: 'Aborting',
-};
-const HA_ACTIVE_STATES = ['run', 'pause', 'delayedstart'];
-const HA_HOT = new Set(['oven', 'induction', 'microwave']); // confirm before remote start
-
 function humanizeProg(opt, labels) {
   if (!opt || opt === 'unknown' || opt === 'unavailable') return '—';
   if (labels && labels[opt]) return labels[opt];
@@ -1171,7 +1137,6 @@ function humanizeProg(opt, labels) {
     .replace(/^dishcare_dishwasher_program_/, '')
     .replace(/^cooking_oven_program_heating_mode_/, '')
     .replace(/^cooking_oven_program_/, '')
-    .replace(/^cooking_microwave_program_/, '')
     .replace(/_/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase());
 }
@@ -1182,85 +1147,7 @@ function opStateColor(state) {
   if (state === 'ready') return 'var(--accent)';
   if (state === 'error' || state === 'actionrequired') return 'var(--danger)';
   if (state === 'finished') return 'var(--accent3)';
-  if (state === 'pause' || state === 'delayedstart') return 'var(--accent)';
   return 'var(--muted)';
-}
-
-function fmtMins(m) {
-  m = Math.round(m);
-  const h = Math.floor(m / 60), r = m % 60;
-  return h ? `${h}h ${r}m` : `${r}m`;
-}
-
-function haTiming(a) {
-  if (!HA_ACTIVE_STATES.includes(a.operation_state)) return '';
-  const t = a.finish_time ? new Date(a.finish_time) : null;
-  if (!t || isNaN(t)) return '';
-  const mins = (t - Date.now()) / 60000;
-  const clock = t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return mins > 0 ? `Done ${clock} · ${fmtMins(mins)} left` : `Done ${clock}`;
-}
-
-function haFind(appId) {
-  const apps = window._lastDevices?.home_assistant?.appliances;
-  return apps ? Object.values(apps).find(x => x.id === appId) : null;
-}
-
-function haBtn(label, color, bg, onclick, disabled) {
-  return `<button type="button" ${disabled ? 'disabled' : ''} onclick="${onclick}"
-    style="font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:8px;cursor:pointer;
-    border:1px solid var(--border2);background:${bg};color:${color}">${label}</button>`;
-}
-
-function haSwitch(appId, role, label, val, online) {
-  return `<label class="toggle-wrap" title="${label}" style="gap:6px;justify-content:space-between">
-    <span class="toggle-label">${label}</span>
-    <label class="toggle" style="margin:0">
-      <input type="checkbox" ${val ? 'checked' : ''} ${!online ? 'disabled' : ''}
-        onchange="haToggle('${appId}','${role}',this.checked,this)">
-      <span class="toggle-slider"></span>
-    </label>
-  </label>`;
-}
-
-// Use the unit and min/max that HA reports for the number entity (backend exposes them in a.entities[role].attributes)
-function haNumMeta(a, role) {
-  const base = { ...HA_NUMBER_ROLES[role] };
-  const at = a?.entities?.[role]?.attributes || {};
-  const unit = at.unit_of_measurement;
-  if (unit === 's')        { base.factor = 60;   base.unit = 'min'; }
-  else if (unit === 'min') { base.factor = 1;    base.unit = 'min'; }
-  else if (unit === 'h')   { base.factor = 1/60; base.unit = 'min'; }
-  else if (unit === '°C' || unit === '°F') { base.factor = 1; base.unit = unit; }
-  const lo = Number(at.min), hi = Number(at.max);
-  if (at.min != null && Number.isFinite(lo)) base.min = Math.ceil(lo / base.factor);
-  if (at.max != null && Number.isFinite(hi) && hi > 0) base.max = Math.floor(hi / base.factor);
-  if (base.def < base.min) base.def = base.min;
-  if (base.def > base.max) base.def = base.max;
-  return base;
-}
-
-function haNumber(a, role, online) {
-  const m = haNumMeta(a, role);
-  const raw = getHaPending(a.id, role) ?? a[role];
-  const has = raw != null && raw !== 'unknown' && raw !== 'unavailable' && !isNaN(Number(raw));
-  const shown = has ? Math.round(Number(raw) / m.factor) : m.def;
-  const inputId = `ha-num-${a.id}-${role}`;
-  const inputStyle = `width:56px;text-align:center;background:var(--surface);color:var(--text);
-    border:1px solid var(--border2);border-radius:6px;padding:4px;font-family:var(--mono);font-size:12px`;
-  const stepBtn = (d, t) => `<button type="button" ${!online ? 'disabled' : ''} onclick="haNumStep('${a.id}','${role}',${d})"
-    style="width:24px;height:24px;border-radius:6px;border:1px solid var(--border2);background:var(--surface);
-    color:var(--text);cursor:pointer;font-size:14px;line-height:1">${t}</button>`;
-  return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
-    <span class="toggle-label">${m.label}${has ? '' : ' <span style="opacity:.5">(unset)</span>'}</span>
-    <div style="display:flex;align-items:center;gap:4px">
-      ${stepBtn(-1, '−')}
-      <input id="${inputId}" type="number" min="${m.min}" max="${m.max}" step="${m.step}" value="${shown}" style="${inputStyle}">
-      ${stepBtn(1, '+')}
-      <span class="toggle-label" style="min-width:24px">${m.unit}</span>
-      ${haBtn('SET', 'var(--accent)', 'rgba(240,165,0,0.12)', `haSetNumber('${a.id}','${role}')`, !online)}
-    </div>
-  </div>`;
 }
 
 function renderAppliances(haDevice) {
@@ -1270,121 +1157,38 @@ function renderAppliances(haDevice) {
     if (section) section.style.display = 'none';
     return;
   }
+  section.style.display = '';
   const apps = Object.values(haDevice.appliances);
   if (!apps.length) { section.style.display = 'none'; return; }
-  section.style.display = '';
-
-  // Don't rebuild the DOM while the user is picking from a dropdown or typing a value
-  const act = document.activeElement;
-  if (act && grid.contains(act) &&
-      (act.tagName === 'SELECT' || (act.tagName === 'INPUT' && act.type !== 'checkbox'))) return;
-
-  const running = apps.filter(a => HA_ACTIVE_STATES.includes(a.operation_state)).length;
-  const lbl = section.querySelector('.section-label');
-  if (lbl) lbl.textContent = 'Kitchen appliances' + (running ? ` · ${running} active` : '');
 
   grid.innerHTML = apps.map(a => {
-    const ent = a.entities || {};
     const power = getHaPending(a.id, 'power') ?? a.power;
     const childLock = getHaPending(a.id, 'child_lock') ?? a.child_lock;
-    const op = a.operation_state;
-    const opLabel = HA_STATE_LABELS[op] || (op && op !== 'unknown' && op !== 'unavailable' ? op : (power ? 'On' : 'Off'));
-    const active = HA_ACTIVE_STATES.includes(op);
-    const online = a.online !== false;
+    const op = a.operation_state || '—';
+    const door = a.door;
+    const prog = a.progress;
+    const temp = a.temperature;
     const selected = getHaPending(a.id, 'selected_programme') ?? a.selected_programme;
     const labels = (a.option_labels && a.option_labels.selected_programme) || {};
     const opts = (a.options && a.options.selected_programme) || [];
-    const accent = active ? 'var(--accent2)' : power ? 'var(--accent)' : 'var(--border2)';
+    const online = a.online !== false;
+    const accent = power ? 'var(--accent)' : 'var(--border2)';
 
-    // Sub line: door · cavity temp · running programme
-    const sub = [];
-    if (a.door && a.door !== 'unknown') sub.push('Door ' + a.door);
-    if (a.temperature != null) sub.push('Now ' + Math.round(a.temperature) + '°C');
-    if (active && a.active_programme && a.active_programme !== 'unknown')
-      sub.push(humanizeProg(a.active_programme, labels));
-    const timing = haTiming(a);
-
-    // Progress bar
-    const prog = a.progress != null && active ? Math.max(0, Math.min(100, Math.round(a.progress))) : null;
-    const progHtml = prog != null ? `
-      <div style="margin-top:10px">
-        <div style="height:4px;border-radius:4px;background:rgba(255,255,255,0.08);overflow:hidden">
-          <div style="height:100%;width:${prog}%;background:var(--accent2);transition:width .6s"></div>
-        </div>
-        <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:4px">
-          <span>${prog}%</span><span>${timing}</span>
-        </div>
-      </div>` : (timing ? `<div class="card-sub">${timing}</div>` : '');
-
-    // Alert chips
-    const chips = [];
-    for (const [role, text] of Object.entries(HA_ALERT_ROLES)) {
-      if (a[role] === true || a[role] === 'on') chips.push({ text: '⚠ ' + text, col: 'var(--danger)', bg: 'rgba(255,91,91,0.12)' });
-    }
-    if (op === 'actionrequired') chips.push({ text: '⚠ Action required', col: 'var(--danger)', bg: 'rgba(255,91,91,0.12)' });
-    if (a.remote_start === false && ent.remote_start) chips.push({ text: 'Remote start off', col: 'var(--muted)', bg: 'rgba(255,255,255,0.06)' });
-    if (a.remote_control === false && ent.remote_control) chips.push({ text: 'Remote control off', col: 'var(--muted)', bg: 'rgba(255,255,255,0.06)' });
-    const chipHtml = chips.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
-      ${chips.map(c => `<span style="font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:20px;background:${c.bg};color:${c.col}">${c.text}</span>`).join('')}
-    </div>` : '';
-
-    // Programme picker
-    const progPicker = opts.length ? `
-      <div style="margin-top:10px">
-        <div style="font-size:10px;color:var(--muted);margin-bottom:4px">Programme</div>
-        <select style="width:100%;background:var(--surface);color:var(--text);border:1px solid var(--border2);
-          border-radius:8px;padding:6px 8px;font-family:var(--mono);font-size:12px"
-          ${!online || !power ? 'disabled' : ''}
-          onchange="haSetOption('${a.id}','selected_programme',this.value)">
-          ${opts.map(o => `<option value="${o}" ${o === selected ? 'selected' : ''}>${humanizeProg(o, labels)}</option>`).join('')}
-        </select>
-      </div>` : '';
-
-    // Number controls (target temp, duration, delay start)
-    const numberRoles = Object.keys(HA_NUMBER_ROLES).filter(r => ent[r] && a[r] != null);
-    const numHtml = numberRoles.length && power ? `
-      <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-        ${numberRoles.map(r => haNumber(a, r, online)).join('')}
-      </div>` : '';
-
-    // Action buttons, shown according to state
-    const canStart = ent.active_programme && selected && power && !active;
-    const btns = [];
-    if (canStart)
-      btns.push(haBtn('▶ START', 'var(--accent2)', 'rgba(47,214,160,0.15)', `haStart('${a.id}')`, !online || a.remote_start === false));
-    if (ent.pause && op === 'run')
-      btns.push(haBtn('⏸ PAUSE', 'var(--accent)', 'rgba(240,165,0,0.12)', `haPress('${a.id}','pause')`, !online));
-    if (ent.resume && (op === 'pause' || !op))
-      btns.push(haBtn('RESUME', 'var(--accent2)', 'rgba(47,214,160,0.12)', `haPress('${a.id}','resume')`, !online));
-    if (ent.stop && (active || !op))
-      btns.push(haBtn('■ STOP', 'var(--danger)', 'rgba(255,91,91,0.12)', `haPress('${a.id}','stop')`, !online));
-    const shortcuts = (window._haShortcuts || {})[a.id] || [];
-    const scHtml = shortcuts.length && !active ? `
-      <div style="margin-top:12px">
-        <div style="font-size:10px;color:var(--muted);margin-bottom:6px">Quick start</div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px">
-          ${shortcuts.map((sc, i) => haBtn(
-            `${sc.name} · ${Math.floor(sc.duration_s / 60)}:${String(sc.duration_s % 60).padStart(2, '0')}`,
-            'var(--accent3)', 'rgba(91,143,255,0.12)', `haShortcut('${a.id}',${i})`, !online || haBusy)).join('')}
-        </div>
-      </div>` : '';
-    const btnHtml = btns.length ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">${btns.join('')}</div>` : '';
-
-    // Switch options inside a collapsible section
-    const switches = [];
-    if (childLock != null) switches.push(haSwitch(a.id, 'child_lock', 'Child lock', !!childLock, online));
-    for (const [role, label] of Object.entries(HA_SWITCH_ROLES)) {
-      if (!ent[role]) continue;
+    // Extra switches (dishwasher options etc.)
+    const extraSwitches = [];
+    for (const role of ['intensive_zone', 'vario_speed', 'half_load', 'silence']) {
+      if (a[role] == null && !(a.entities && a.entities[role])) continue;
       const val = getHaPending(a.id, role) ?? a[role];
       if (val === null || val === undefined) continue; // unavailable
-      switches.push(haSwitch(a.id, role, label, !!val, online));
+      const label = role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      extraSwitches.push({ role, label, val: !!val });
     }
-    const optHtml = switches.length ? `
-      <details style="margin-top:12px" ${haOpen[a.id] ? 'open' : ''}
-        ontoggle="haOpen['${a.id}']=this.open">
-        <summary style="cursor:pointer;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)">Options</summary>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px">${switches.join('')}</div>
-      </details>` : '';
+
+    const subParts = [];
+    if (door) subParts.push('Door ' + door);
+    if (temp != null) subParts.push(Math.round(temp) + '°C');
+    if (prog != null) subParts.push(Math.round(prog) + '%');
+    if (a.remote_control === false) subParts.push('no remote');
 
     return `<div class="card ${online ? '' : 'offline'}" style="--card-accent:${accent}">
       <div class="card-label" style="display:flex;justify-content:space-between;align-items:center">
@@ -1395,174 +1199,103 @@ function renderAppliances(haDevice) {
           <span class="toggle-slider"></span>
         </label>
       </div>
-      <div class="card-value" style="color:${opStateColor(op)};margin-top:8px;font-size:20px">${opLabel}</div>
-      <div class="card-sub">${sub.join(' · ') || (online ? '' : 'offline')}</div>
-      ${progHtml}
-      ${chipHtml}
-      ${progPicker}
-      ${numHtml}
-      ${scHtml}
-      ${btnHtml}
-      ${optHtml}
+      <div class="card-value" style="color:${opStateColor(op)};margin-top:8px;font-size:20px">
+        ${op === '—' ? (power ? 'On' : 'Off') : op}
+      </div>
+      <div class="card-sub">${subParts.join(' · ') || (online ? '' : 'offline')}</div>
+      ${opts.length ? `
+        <div style="margin-top:10px">
+          <div style="font-size:10px;color:var(--muted);margin-bottom:4px">Programme</div>
+          <select style="width:100%;background:var(--surface);color:var(--text);border:1px solid var(--border2);
+            border-radius:8px;padding:6px 8px;font-family:var(--mono);font-size:12px"
+            ${!online || !power ? 'disabled' : ''}
+            onchange="haSetOption('${a.id}','selected_programme',this.value)">
+            ${opts.map(o => `<option value="${o}" ${o === selected ? 'selected' : ''}>${humanizeProg(o, labels)}</option>`).join('')}
+          </select>
+        </div>` : ''}
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center">
+        ${childLock != null ? `
+          <label class="toggle-wrap" title="Child lock" style="gap:6px">
+            <span class="toggle-label">LOCK</span>
+            <label class="toggle" style="margin:0">
+              <input type="checkbox" ${childLock ? 'checked' : ''} ${!online ? 'disabled' : ''}
+                onchange="haToggle('${a.id}','child_lock',this.checked,this)">
+              <span class="toggle-slider"></span>
+            </label>
+          </label>` : ''}
+        ${extraSwitches.map(s => `
+          <label class="toggle-wrap" title="${s.label}" style="gap:6px">
+            <span class="toggle-label">${s.label.split(' ')[0].toUpperCase()}</span>
+            <label class="toggle" style="margin:0">
+              <input type="checkbox" ${s.val ? 'checked' : ''} ${!online ? 'disabled' : ''}
+                onchange="haToggle('${a.id}','${s.role}',this.checked,this)">
+              <span class="toggle-slider"></span>
+            </label>
+          </label>`).join('')}
+        ${a.entities && a.entities.stop ? `
+          <button type="button" style="font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:8px;
+            border:1px solid var(--border2);background:rgba(255,91,91,0.12);color:var(--danger);cursor:pointer"
+            ${!online ? 'disabled' : ''} onclick="haPress('${a.id}','stop')">STOP</button>` : ''}
+        ${a.entities && a.entities.resume ? `
+          <button type="button" style="font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:8px;
+            border:1px solid var(--border2);background:rgba(47,214,160,0.12);color:var(--accent2);cursor:pointer"
+            ${!online ? 'disabled' : ''} onclick="haPress('${a.id}','resume')">RESUME</button>` : ''}
+      </div>
     </div>`;
   }).join('');
-}
-
-function haRerender() {
-  if (window._lastDevices?.home_assistant) renderAppliances(window._lastDevices.home_assistant);
-}
-
-async function haCommand(command, params) {
-  const res = await fetch(`${API}/api/devices/home_assistant/command`, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ command, params })
-  });
-  return res.json().catch(() => ({}));
 }
 
 async function haToggle(appId, role, turnOn, checkbox) {
   setHaPending(appId, role, turnOn);
   if (checkbox) checkbox.disabled = true;
   try {
-    await haCommand(turnOn ? 'on' : 'off', { appliance: appId, role });
+    await fetch(`${API}/api/devices/home_assistant/command`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        command: turnOn ? 'on' : 'off',
+        params: { appliance: appId, role }
+      })
+    });
   } catch (e) {
     setHaPending(appId, role, !turnOn);
     if (checkbox) checkbox.checked = !turnOn;
     console.error(e);
   } finally {
     if (checkbox) checkbox.disabled = false;
-    haRerender();
+    if (window._lastDevices?.home_assistant) renderAppliances(window._lastDevices.home_assistant);
   }
 }
 
 async function haSetOption(appId, role, option) {
   setHaPending(appId, role, option);
   try {
-    await haCommand('set_option', { appliance: appId, role, option });
+    await fetch(`${API}/api/devices/home_assistant/command`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        command: 'set_option',
+        params: { appliance: appId, role, option }
+      })
+    });
   } catch (e) {
     console.error(e);
   }
-  haRerender();
 }
 
 async function haPress(appId, role) {
-  const a = haFind(appId);
-  if (role === 'stop' && HA_HOT.has(appId) && !confirm(`Stop the running programme on ${a?.name || appId}?`)) return;
   try {
-    await haCommand('press', { appliance: appId, role });
+    await fetch(`${API}/api/devices/home_assistant/command`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        command: 'press',
+        params: { appliance: appId, role }
+      })
+    });
   } catch (e) {
     console.error(e);
   }
-}
-
-// Selecting a programme in HA's "active programme" select starts it.
-async function haStart(appId) {
-  const a = haFind(appId);
-  const sel = getHaPending(appId, 'selected_programme') ?? a?.selected_programme;
-  if (!a || !sel) return;
-  if (HA_HOT.has(appId) &&
-      !confirm(`Start ${a.name} remotely?\n\nOnly do this if it's safe: nothing flammable inside or on top.`)) return;
-  const keep = {};
-  for (const role of ['setpoint_temperature', 'duration']) {
-    if (!a.entities?.[role]) continue;
-    const v = Number(getHaPending(appId, role) ?? a[role]);
-    if (Number.isFinite(v)) keep[role] = v;
-  }
-  await haSetOption(appId, 'active_programme', sel);
-  if (Object.keys(keep).length) await haReapply(appId, keep);
-}
-
-// Starting a programme through the "active programme" select makes Home Connect start it with
-// the appliance's DEFAULT options, which wipes duration/temperature set beforehand. Once it is
-// running, HA applies option changes to the active programme, so re-send them a few times.
-async function haReapply(appId, values) {
-  for (const wait of [2000, 3000, 4000]) {
-    await sleep(wait);
-    for (const [role, value] of Object.entries(values)) {
-      try { await haCommand('set_value', { appliance: appId, role, value }); } catch (e) { console.error(e); }
-    }
-  }
-}
-
-// ── Quick-start shortcuts ────────────────────────────────────────────────────
-let haBusy = false;
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-// Fallback when a shortcut has no explicit "programme": prefer an option ending in "_max",
-// otherwise the highest-wattage microwave option.
-function haMaxWattProgramme(opts, labels) {
-  const mw = opts.filter(o => /microwave/i.test(o));
-  const max = mw.find(o => /_max$/i.test(o));
-  if (max) return max;
-  let best = null, bestW = -1;
-  for (const o of mw) {
-    const m = String(o).match(/(\d{2,4})_?w(?:att)?/i);
-    if (m && Number(m[1]) > bestW) { bestW = Number(m[1]); best = o; }
-  }
-  return best;
-}
-
-async function haShortcut(appId, idx) {
-  if (haBusy) return;
-  const sc = ((window._haShortcuts || {})[appId] || [])[idx];
-  let a = haFind(appId);
-  if (!sc || !a) return;
-  const mins = `${Math.floor(sc.duration_s / 60)}:${String(sc.duration_s % 60).padStart(2, '0')}`;
-  if (!confirm(`Start ${a.name}: ${sc.name} (${mins} at max power)?\n\nMake sure the food is inside, and nothing metal.`)) return;
-
-  haBusy = true; haRerender();
-  try {
-    if (!a.power) {                       // wake it up first so programme options become available
-      setHaPending(appId, 'power', true);
-      await haCommand('on', { appliance: appId, role: 'power' });
-      await sleep(3000);
-      a = haFind(appId) || a;
-    }
-    const labels = a.option_labels?.selected_programme;
-    const prog = sc.programme || haMaxWattProgramme(a.options?.selected_programme || [], labels);
-    if (!prog) { alert('Could not find a max-power microwave programme. Set "programme" on the shortcut in config.json.'); return; }
-
-    setHaPending(appId, 'selected_programme', prog);
-    await haCommand('set_option', { appliance: appId, role: 'selected_programme', option: prog });
-    await sleep(1500);
-    const dm = haNumMeta(haFind(appId) || a, 'duration');
-    const durValue = (sc.duration_s / 60) * dm.factor;   // seconds, minutes or hours, whatever HA uses
-    setHaPending(appId, 'duration', durValue);
-    const r = await haCommand('set_value', { appliance: appId, role: 'duration', value: durValue });
-    if (r && r.ok === false) console.error('set duration failed', r);
-    await sleep(1000);
-    await haCommand('set_option', { appliance: appId, role: 'active_programme', option: prog });
-    await haReapply(appId, { duration: durValue });
-  } catch (e) {
-    console.error(e);
-  } finally {
-    haBusy = false; haRerender();
-  }
-}
-
-function haNumStep(appId, role, dir) {
-  const m = haNumMeta(haFind(appId), role);
-  const input = el(`ha-num-${appId}-${role}`);
-  if (!input) return;
-  const v = (parseFloat(input.value) || 0) + dir * m.step;
-  input.value = Math.max(m.min, Math.min(m.max, v));
-}
-
-async function haSetNumber(appId, role) {
-  const m = haNumMeta(haFind(appId), role);
-  const input = el(`ha-num-${appId}-${role}`);
-  if (!input) return;
-  const shown = Math.max(m.min, Math.min(m.max, parseFloat(input.value) || m.def));
-  const value = shown * m.factor;
-  setHaPending(appId, role, value);
-  try {
-    const data = await haCommand('set_value', { appliance: appId, role, value });
-    if (data && data.ok === false) console.error('set_value failed:', data);
-  } catch (e) {
-    console.error(e);
-  }
-  haRerender();
 }
 
 function renderTeslaCar(d) {
@@ -2001,7 +1734,7 @@ function updateMinerEconomics(miner) {
 function renderMinerRule(weather, price, miner, verisure) {
   const tempOn       = RULE_CFG.temp_on        ?? 20;
   const tempOff      = RULE_CFG.temp_off       ?? 22;
-  const priceHys     = RULE_CFG.price_hys_ore  ?? 20;
+  const maxPrice     = RULE_CFG.max_price_ore  ?? 50;
   const indoorSensor = RULE_CFG.indoor_sensor  ?? null;
   const indoorOn     = RULE_CFG.indoor_temp_on     ?? 22;
   const indoorOff    = RULE_CFG.indoor_temp_off    ?? 24;
@@ -2017,13 +1750,9 @@ function renderMinerRule(weather, price, miner, verisure) {
 
   const temp     = weather.temperature_c;
   const priceNow = price.price_now_ore;
-  const priceAvg = price.today_avg_ore;
   const mining   = miner?.mining_active;
 
-  if (temp == null || priceNow == null || priceAvg == null) return;
-
-  const threshOn  = priceAvg - priceHys;
-  const threshOff = priceAvg + priceHys;
+  if (temp == null || priceNow == null) return;
 
   // Indoor temp from Verisure climate sensors
   let indoorTemp = null;
@@ -2037,8 +1766,8 @@ function renderMinerRule(weather, price, miner, verisure) {
   // Evaluate each condition independently (mirrors Python logic)
   const outsideGood = temp < tempOn;
   const outsideBad  = temp > tempOff;
-  const priceGood   = priceNow < threshOn;
-  const priceBad    = priceNow > threshOff;
+  const priceGood   = priceNow < maxPrice;
+  const priceBad    = priceNow >= maxPrice;
   const indoorGood  = indoorTemp == null ? true : indoorTemp < indoorOn;
   const indoorBad   = indoorTemp == null ? false : indoorTemp > indoorOff;
   const tooCold     = indoorTemp != null && indoorTemp < heatThresh;
@@ -2052,7 +1781,7 @@ function renderMinerRule(weather, price, miner, verisure) {
     state = 'run'; label = 'RESUME';
     const parts = [
       `outside ${temp}°C < ${tempOn}°C`,
-      `price ${priceNow.toFixed(0)} öre < avg-${priceHys} (${threshOn.toFixed(0)} öre)`,
+      `price ${priceNow.toFixed(0)} öre < ${maxPrice} öre`,
     ];
     if (indoorTemp != null) parts.push(`indoor ${indoorTemp}°C < ${indoorOn}°C`);
     reason = parts.join('  ·  ');
@@ -2063,7 +1792,7 @@ function renderMinerRule(weather, price, miner, verisure) {
     state = 'pause'; label = 'PAUSE';
     const reasons = [];
     if (outsideBad) reasons.push(`outside ${temp}°C > ${tempOff}°C`);
-    if (priceBad)   reasons.push(`price ${priceNow.toFixed(0)} öre > avg+${priceHys} (${threshOff.toFixed(0)} öre)`);
+    if (priceBad)   reasons.push(`price ${priceNow.toFixed(0)} öre ≥ ${maxPrice} öre`);
     if (indoorBad)  reasons.push(`indoor ${indoorTemp}°C > ${indoorOff}°C`);
     reason = reasons.join('  ·  ');
   } else {
@@ -2079,8 +1808,7 @@ function renderMinerRule(weather, price, miner, verisure) {
   const vals = [
     `outside ${temp}°C`,
     `price ${priceNow.toFixed(0)} öre`,
-    `avg ${priceAvg.toFixed(0)} öre`,
-    `band ${threshOn.toFixed(0)}–${threshOff.toFixed(0)} öre`,
+    `limit ${maxPrice} öre`,
   ];
   if (indoorTemp != null) vals.push(`indoor ${indoorTemp}°C`);
   setText('rule-values', vals.join('  ·  '));
@@ -2135,7 +1863,7 @@ function buildLogicDiagram() {
   const r = RULE_CFG;
   const tempOn     = r.temp_on        ?? 20;
   const tempOff    = r.temp_off       ?? 22;
-  const priceHys   = r.price_hys_ore  ?? 20;
+  const maxPrice   = r.max_price_ore  ?? 50;
   const indoorOn   = r.indoor_temp_on     ?? 22;
   const indoorOff  = r.indoor_temp_off    ?? 24;
   const heatOffset = r.indoor_heat_offset ?? 0.5;
@@ -2233,7 +1961,7 @@ function buildLogicDiagram() {
   // ── Price ──
   g = coloredBox(110, 274, 400, 56, C.amber);
   g.appendChild(txt(CX, 292, 'Electricity price', {weight:'600'}));
-  g.appendChild(label(CX, 312, `Resume < avg−${priceHys} öre  ·  Pause > avg+${priceHys} öre`));
+  g.appendChild(label(CX, 312, `Run < ${maxPrice} öre  ·  Pause ≥ ${maxPrice} öre`));
   svg.appendChild(g);
   svg.appendChild(arrow(CX, 330, CX, 364));
   svg.appendChild(mk('text',{x:CX+8,y:352,'font-size':'10',fill:'var(--muted-color,#6b7080)',
